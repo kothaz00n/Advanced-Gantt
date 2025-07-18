@@ -1,0 +1,25 @@
+{
+    "visual": {
+        "name": "ganttvisual",
+        "displayName": "ganttvisual",
+        "guid": "ganttvisual89768643501A4BA7B57BD0602661FE77",
+        "visualClassName": "Visual",
+        "version": "1.0.0.0",
+        "description": "diagram gantt",
+        "supportUrl": "https://example.com/support",
+        "gitHubUrl": "https://github.com/nicolaspastorini1/ganttvisual"
+    },
+    "apiVersion": "5.4.0",
+    "author": {
+        "name": "NICOLAS PASTORINI WITH ♥",
+        "email": "nicolaspastorini14@gmail.com"
+    },
+    "assets": {
+        "icon": "assets/icon.png"
+    },
+    "externalJS": [],
+    "style": "style/visual.less",
+    "capabilities": "capabilities.json",
+    "dependencies": null,
+    "stringResources": []
+}

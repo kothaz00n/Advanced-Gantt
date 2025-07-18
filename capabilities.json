@@ -1,0 +1,585 @@
+{
+  "dataRoles": [
+    {
+      "displayName": "Task",
+      "name": "task",
+      "kind": "Grouping"
+    },
+    {
+      "displayName": "Parent",
+      "name": "parent",
+      "kind": "Grouping"
+    },
+    {
+      "displayName": "Start Date",
+      "name": "startDate",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "End Date",
+      "name": "endDate",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Duration",
+      "name": "duration",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Completion",
+      "name": "completion",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Tooltips",
+      "name": "tooltips",
+      "kind": "Measure"
+    }
+  ],
+  "dataViewMappings": [
+    {
+      "conditions": [
+        {
+          "parent": {
+            "max": 1
+          },
+          "startDate": {
+            "max": 1
+          },
+          "endDate": {
+            "max": 1
+          },
+          "completion": {"max": 1}
+        }
+      ],
+      "categorical": {
+        "categories": {
+          "select": [
+            {
+              "bind": {
+                "to": "task"
+              }
+            },
+            {
+              "bind": {
+                "to": "parent"
+              }
+            }
+          ]
+        },
+        "values": {
+          "select": [
+            {
+              "bind": {
+                "to": "startDate"
+              }
+            },
+            {
+              "bind": {
+                "to": "endDate"
+              }
+            },
+            {
+              "bind": {
+                "to": "tooltips"
+              },
+              "nullable": true
+            },
+            {
+              "bind": {
+                "to": "completion"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "objects": {
+    "general": {
+      "displayName": "General",
+      "properties": {
+        "formatString": {
+          "type": {
+            "formatting": {
+              "formatString": true
+            }
+          }
+        }
+      }
+    },
+    "headerStyle": {
+      "displayName": "Encabezados",
+      "properties": {
+        "show": {
+          "displayName": "Mostrar encabezados",
+          "type": {
+            "bool": true
+          }
+        },
+        "fontColor": {
+          "displayName": "Color de fuente",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "backgroundColor": {
+          "displayName": "Color de fondo",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "fontSize": {
+          "displayName": "Tamaño de fuente",
+          "type": {
+            "formatting": {
+              "fontSize": true
+            }
+          }
+        },
+        "fontFamily": {
+          "displayName": "Fuente",
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          }
+        }
+      }
+    },
+    "colorSelector": {
+      "displayName": "Data colors",
+      "properties": {
+        "fill": {
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "axisY": {
+      "displayName": "Eje Y",
+      "properties": {
+        "showLine": {
+          "displayName": "Mostrar línea",
+          "type": {
+            "bool": true
+          }
+        },
+        "lineColor": {
+          "displayName": "Color de línea",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "tickColor": {
+          "displayName": "Color de ticks",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "labelDisplayUnits": {
+          "displayName": "Unidades de etiqueta",
+          "type": {
+            "integer": true
+          }
+        }
+      }
+    },
+    "axisXCard": {
+      "displayName": "Eje X",
+      "properties": {
+        "fontFamily": {
+          "displayName": "Fuente",
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          }
+        },
+        "fontSize": {
+          "displayName": "Tamaño",
+          "type": {
+            "formatting": {
+              "fontSize": true
+            }
+          }
+        },
+        "fontColor": {
+          "displayName": "Color",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "bold": {
+          "type": {
+            "bool": true
+          }
+        },
+        "italic": {
+          "type": {
+            "bool": true
+          }
+        },
+        "underline": {
+          "type": {
+            "bool": true
+          }
+        }
+      }
+    },
+    "labelStyleGroup": {
+      "displayName": "Etiqueta",
+      "properties": {
+        "fontFamily": {
+          "displayName": "Fuente",
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          }
+        },
+        "fontSize": {
+          "displayName": "Tamaño",
+          "type": {
+            "formatting": {
+              "fontSize": true
+            }
+          }
+        },
+        "fontColor": {
+          "displayName": "Color",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "bold": {
+          "type": {
+            "bool": true
+          }
+        },
+        "italic": {
+          "type": {
+            "bool": true
+          }
+        },
+        "underline": {
+          "type": {
+            "bool": true
+          }
+        }
+      }
+    },
+    "weekendCard": {"displayName": "Marcador fin de semanas", "properties": {"show": {"type": {"bool": true}}, "markerColor":{"type": {"fill": {"solid": {"color": true}}}}}},
+    "barCard": {
+      "displayName": "Barras",
+      "properties": {
+        "labelFontFamily": {
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          }
+        },
+        "fontSize": {
+          "type": {
+            "formatting": {
+              "fontSize": true
+            }
+          }
+        },
+        "fontColor": {
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "bold": {
+          "type": {
+            "bool": true
+          }
+        },
+        "italic": {
+          "type": {
+            "bool": true
+          }
+        },
+        "underline": {
+          "type": {
+            "bool": true
+          }
+        },
+        "fill": {
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "barHeight": {
+          "type": {
+            "integer": true
+          }
+        },
+        "cornerRadius": {
+          "type": {
+            "integer": true
+          }
+        },
+        "opacity": {
+          "type": {
+            "numeric": true
+          }
+        },
+        "strokeColor": {
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "strokeWidth": {
+          "type": {
+            "numeric": true
+          }
+        }
+      }
+    },
+    "barStyleGroup": {
+      "displayName": "Estilo de barra",
+      "properties": {
+        "ParentSelector": {
+          "type": {
+            "text": true
+          }
+        },
+        "barHeight": {
+          "type": {
+            "integer": true
+          }
+        },
+        "cornerRadius": {
+          "type": {
+            "integer": true
+          }
+        },
+        "opacity": {
+          "type": {
+            "numeric": true
+          }
+        },
+        "strokeColor": {
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "strokeWidth": {
+          "type": {
+            "numeric": true
+          }
+        }
+      }
+    },
+    "barColors": {
+      "displayName": "Colores de barras",
+      "properties": {
+        "fill": {
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          },
+          "displayName": "Color de barra"
+        }
+      }
+    },
+    "taskStyle": {
+      "displayName": "Tareas",
+      "properties": {
+        "show": {
+          "displayName": "Mostrar tareas",
+          "type": {
+            "bool": true
+          }
+        },
+        "fontColor": {
+          "displayName": "Color de fuente",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "fontSize": {
+          "displayName": "Tamaño de fuente",
+          "type": {
+            "formatting": {
+              "fontSize": true
+            }
+          }
+        },
+        "fontFamily": {
+          "displayName": "Fuente",
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          }
+        },
+        "taskHeight": {
+          "displayName": "Alto de tarea",
+          "description": "Altura en píxeles; 0 = automático",
+          "type": {
+            "integer": true
+          }
+        }
+      }
+    },
+    "parentStyle": {
+      "displayName": "Parent",
+      "properties": {
+        "show": {
+          "displayName": "Mostrar Parent",
+          "type": {
+            "bool": true
+          }
+        },
+        "backgroundColor": {
+          "displayName": "Color de fuente",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "fontColor": {
+          "displayName": "Color de fuente",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        },
+        "fontSize": {
+          "displayName": "Tamaño de fuente",
+          "type": {
+            "formatting": {
+              "fontSize": true
+            }
+          }
+        },
+        "fontFamily": {
+          "displayName": "Fuente",
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          }
+        }
+      }
+    },
+    "adminCard": {
+      "displayName": "adminCard",
+      "properties": {
+        "Alto": {
+          "type": {
+            "integer": true
+          }
+        },
+        "Ancho": {
+          "type": {
+            "integer": true
+          }
+        },
+        "mTop": {
+          "type": {
+            "integer": true
+          }
+        },
+        "mBottom": {
+          "type": {
+            "integer": true
+          }
+        },
+        "mLeft": {
+          "type": {
+            "integer": true
+          }
+        },
+        "mRight": {
+          "type": {
+            "integer": true
+          }
+        }
+      }
+    }
+  },
+  "tooltips": {
+    "supportedTypes": {
+      "default": true,
+      "canvas": true
+    },
+    "roles": [
+      "tooltips"
+    ],
+    "supportEnhancedTooltips": true
+  },
+  "supportsLandingPage": true,
+  "sorting": {
+        "default": {   }
+    },
+  "drilldown": {
+    "roles": [
+      "task",
+      "parent"
+    ]
+  },
+  "privileges": []
+}

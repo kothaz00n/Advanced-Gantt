@@ -1,0 +1,439 @@
+"use strict";
+
+import { formattingSettings } from "powerbi-visuals-utils-formattingmodel";
+import FormattingSettingsSlice = formattingSettings.SimpleSlice;
+import FormattingSettingsGroup = formattingSettings.Group;
+import Card = formattingSettings.SimpleCard;
+import { Model, Slice, ColorPicker, SimpleCard, NumUpDown, ToggleSwitch, FontControl, CompositeCard, FontPicker } from "powerbi-visuals-utils-formattingmodel/lib/FormattingSettingsComponents";
+import { GanttDataPoint } from "./visual";
+
+/* DATA COLORS */
+
+class ColorSelectorCardSettings extends SimpleCard {
+    name: string = "colorSelector";
+    displayName?: string = "Data Colors";
+    slices: Slice[] = [];
+}
+
+/* ────────────────────────────────
+   EJE Y
+──────────────────────────────── */
+class AxisYCardSettings extends SimpleCard {
+
+    name = "axisY";
+    displayName = "Eje Y";
+
+    public showLine: ToggleSwitch = new ToggleSwitch({
+        name: "showLine",
+        displayName: "Mostrar línea",
+        value: true
+    });
+
+    public widthLine: NumUpDown = new NumUpDown({
+        name: "widthLine",
+        displayName: "Grosor de línea",
+        value: 0.5
+    });
+
+    public lineColor: ColorPicker = new ColorPicker({
+        name: "lineColor",
+        displayName: "Color de línea",
+        value: { value: "#666666" }
+    });
+
+    public tickColor: ColorPicker = new ColorPicker({
+        name: "tickColor",
+        displayName: "Color de ticks",
+        value: { value: "#666666" }
+    });
+
+    public labelDisplayUnits: NumUpDown = new NumUpDown({
+        name: "labelDisplayUnits",
+        displayName: "Unidades de etiqueta",
+        value: 0
+    });
+
+
+    public slices: FormattingSettingsSlice[] = [
+        this.showLine,
+        this.lineColor,
+        this.tickColor,
+        this.labelDisplayUnits,
+        this.widthLine
+    ];
+}
+/* ────────────────────────────────
+   EJE X
+──────────────────────────────── */
+class AxisXCardSettings extends SimpleCard {
+    name: string = "axisXCard";
+    displayName: string = "Eje X";
+
+    public fontFamily: FontPicker = new FontPicker({
+        name: "fontFamily",
+        value: "Arial, sans-serif"
+    });
+
+    public fontSize: NumUpDown = new NumUpDown({
+        name: "fontSize",
+        value: 15
+    });
+
+    public bold: ToggleSwitch = new ToggleSwitch({
+        name: "bold",
+        value: false
+    });
+
+    public italic: ToggleSwitch = new ToggleSwitch({
+        name: "italic",
+        value: false
+    });
+
+    public underline: ToggleSwitch = new ToggleSwitch({
+        name: "underline",
+        value: false
+    });
+
+    public fontColor: ColorPicker = new ColorPicker({
+        name: "fontColor",
+        value: { value: "#000000" },
+        displayName: "Color de fuente"
+    });
+
+    public font: FontControl = new FontControl({
+        name: "font",
+        displayName: "Fuente",
+        fontFamily: this.fontFamily,
+        fontSize: this.fontSize,
+        bold: this.bold,
+        italic: this.italic,
+        underline: this.underline
+    });
+
+
+    public slices: formattingSettings.Slice[] = [this.font];
+}
+
+/* ────────────────────────────────
+   BARRAS
+──────────────────────────────── */
+class BarLabelStyleGroup extends SimpleCard {
+    name: string = "labelStyleGroup";
+    displayName: string = "Etiqueta";
+
+    public fontFamily: FontPicker = new FontPicker({
+        name: "fontFamily",
+        value: "Arial, sans-serif"
+    });
+
+    public fontSize: NumUpDown = new NumUpDown({
+        name: "fontSize",
+        value: 15
+    });
+
+    public bold: ToggleSwitch = new ToggleSwitch({
+        name: "bold",
+        value: false
+    });
+
+    public italic: ToggleSwitch = new ToggleSwitch({
+        name: "italic",
+        value: false
+    });
+
+    public underline: ToggleSwitch = new ToggleSwitch({
+        name: "underline",
+        value: false
+    });
+
+    public fontColor: ColorPicker = new ColorPicker({
+        name: "fontColor",
+        value: { value: "#000000" },
+        displayName: "Color de fuente"
+    });
+
+    public font: FontControl = new FontControl({
+        name: "font",
+        displayName: "Fuente",
+        fontFamily: this.fontFamily,
+        fontSize: this.fontSize,
+        bold: this.bold,
+        italic: this.italic,
+        underline: this.underline
+    });
+
+
+    public slices: formattingSettings.Slice[] = [this.font];
+}
+
+class BarStyleGroup extends FormattingSettingsGroup {
+    constructor() {
+        super({
+            displayName: "Estilo de barra",
+            name: "barStyleGroup",
+            slices: [
+                new NumUpDown({
+                    name: "barHeight",
+                    displayName: "Alto de barra",
+                    description: "Altura en píxeles; 0 = automático",
+                    value: 30
+                }),
+                new formattingSettings.Slider({
+                    name: "cornerRadius",
+                    displayName: "Radio de esquinas",
+                    value: 5
+                }),
+                new formattingSettings.Slider({
+                    name: "opacity",
+                    displayName: "Opacidad",
+                    description: "0 = transparente, 1 = sólido",
+                    value: 0.8
+                }),
+                new ColorPicker({
+                    name: "strokeColor",
+                    displayName: "Color de borde",
+                    value: { value: "#3C99F7" }
+                }),
+                new NumUpDown({
+                    name: "strokeWidth",
+                    displayName: "Ancho de borde",
+                    value: 3
+                })
+            ]
+        });
+    }
+}
+
+class BarCardSettings extends CompositeCard {
+    name = "barCard";
+    displayName = "Barras";
+
+    labelGroup = new BarLabelStyleGroup();
+    barGroup = new BarStyleGroup();
+
+    groups: formattingSettings.Group[] = [this.labelGroup, this.barGroup];
+}
+
+/* ────────────────────────────────
+   Encabezados
+──────────────────────────────── */
+class HeaderCardSettings extends SimpleCard {
+    show = new ToggleSwitch({
+        name: "show",
+        displayName: "Mostrar encabezados",
+        value: true
+    });
+
+    fontColor = new ColorPicker({
+        name: "fontColor",
+        displayName: "Color de fuente",
+        value: { value: "#000000" }
+    });
+
+    backgroundColor = new ColorPicker({
+        name: "backgroundColor",
+        displayName: "Color de fondo",
+        value: { value: "#ffffffff" }
+    });
+
+    fontSize = new NumUpDown({
+        name: "fontSize",
+        displayName: "Tamaño de fuente",
+        value: 15
+    });
+
+    fontFamily = new FontPicker({
+        name: "fontFamily",
+        displayName: "Fuente",
+        value: "Segoe UI"
+    });
+
+    name = "headerStyle";
+    displayName = "Encabezados";
+    slices: FormattingSettingsSlice[] = [this.show, this.fontColor, this.backgroundColor, this.fontSize, this.fontFamily];
+}
+
+/* ────────────────────────────────
+   Tareas
+──────────────────────────────── */
+class TaskCardSetting extends SimpleCard {
+    show = new ToggleSwitch({
+        name: "show",
+        displayName: "Mostrar tareas",
+        value: true
+    });
+
+    taskHeight = new NumUpDown({
+        name: "taskHeight",
+        displayName: "Alto de tarea",
+        description: "Altura en píxeles; 0 = automático",
+        value: 40
+    });
+
+    fontColor = new ColorPicker({
+        name: "fontColor",
+        displayName: "Color de fuente",
+        value: { value: "#000000" }
+    });
+
+    fontSize = new NumUpDown({
+        name: "fontSize",
+        displayName: "Tamaño de fuente",
+        value: 15
+    });
+
+    fontFamily = new FontPicker({
+        name: "fontFamily",
+        displayName: "Fuente",
+        value: "Segoe UI"
+    });
+
+    name = "taskStyle";
+    displayName = "Tareas";
+    slices: FormattingSettingsSlice[] = [this.show, this.taskHeight, this.fontColor, this.fontSize, this.fontFamily];
+}
+
+/* ────────────────────────────────
+   Parent
+──────────────────────────────── */
+class ParentCardSetting extends SimpleCard {
+    show = new ToggleSwitch({
+        name: "show",
+        displayName: "Mostrar Parent",
+        value: true
+    });
+
+    fontColor = new ColorPicker({
+        name: "fontColor",
+        displayName: "Color de fuente",
+        value: { value: "#000000" }
+    });
+    backgroundColor = new ColorPicker({
+        name: "backgroundColor",
+        displayName: "Color de fondo",
+        value: { value: "#F3F7FAFF" }
+    });
+    fontSize = new NumUpDown({
+        name: "fontSize",
+        displayName: "Tamaño de fuente",
+        value: 15
+    });
+    fontFamily = new FontPicker({
+        name: "fontFamily",
+        displayName: "Fuente",
+        value: "Segoe UI"
+    });
+
+    name = "parentStyle";
+    displayName = "Parent";
+    slices: FormattingSettingsSlice[] = [this.show, this.fontColor, this.backgroundColor, this.fontSize, this.fontFamily];
+}
+/* ______________________
+      Weekend
+____________________*/
+class WeekendCardSettings extends SimpleCard{
+        show = new ToggleSwitch({
+            name: "show",
+            displayName: "Mostrar marcador",
+            value: true
+        })
+        markerColor = new ColorPicker({
+            name: "markerColor",
+            displayName: "Color de marcador",
+            value: { value: "#E6E6E6"}
+        })
+        name = "weekendCard";
+        displayName = "Weekend";
+        slices: formattingSettings.Slice[] = [this.show, this.markerColor]
+    }
+
+class adminSettings extends SimpleCard {
+    Alto = new NumUpDown({
+        name: "Alto",
+        displayName: "Alto",
+        value: 10
+    });
+
+    Ancho = new NumUpDown({
+        name: "Ancho",
+        displayName: "Ancho",
+        value: 10
+    });
+
+    Pad = new NumUpDown({
+        name: "Pad",
+        displayName: "Pad",
+        value: 10
+    });
+
+    mTop = new NumUpDown({
+        name: "mTop",
+        displayName: "mTop",
+        value: 1
+    })
+
+    mBottom = new NumUpDown({
+        name: "mBottom",
+        displayName: "mBottom",
+        value: 1
+    })
+
+    mLeft = new NumUpDown({
+        name: "mLeft",
+        displayName: "mLeft",
+        value: 1
+    })
+
+    mRight = new NumUpDown({
+        name: "mRight",
+        displayName: "mRight",
+        value: 1
+    })
+
+
+    name = "adminCard"
+    displayName = "Admin Card"
+
+    slices: formattingSettings.Slice[] = [this.Alto, this.Ancho, this.Pad, this.mTop, this.mBottom, this.mLeft, this.mRight]
+
+}
+/* ────────────────────────────────
+   MODELO GLOBAL
+──────────────────────────────── */
+export class VisualFormattingSettingsModel extends Model {
+    axisYCard = new AxisYCardSettings();
+    axisXCard = new AxisXCardSettings();
+    barCard = new BarCardSettings();
+    headerCard = new HeaderCardSettings();
+    taskCard = new TaskCardSetting();
+    parentCard = new ParentCardSetting();
+    adminCard = new adminSettings();
+    colorSelector = new ColorSelectorCardSettings();
+    weekendCard = new WeekendCardSettings();
+
+    cards: Card[] = [
+        this.axisXCard,
+        this.axisYCard,
+        this.barCard,
+        this.headerCard,
+        this.taskCard,
+        this.parentCard,
+        this.adminCard,
+        this.colorSelector,
+        this.weekendCard
+    ];
+
+    populateColorSelector(dataPoints: GanttDataPoint[]) {
+        const slices: Slice[] = this.colorSelector.slices;
+        if (dataPoints) {
+            dataPoints.forEach(dataPoint => {
+                slices.push(new ColorPicker({
+                    name: "fill",
+                    displayName: dataPoint.parent,
+                    value: { value: dataPoint.color },
+                    selector: dataPoint.selectionId.getSelector(),
+                }));
+            });
+        }
+    }
+}
