@@ -28,6 +28,8 @@ export declare class Visual implements IVisual {
     private yAxisSVG;
     private ganttDiv;
     private ganttSVG;
+    private axisBottomContentG;
+    private axisTopContentG;
     private leftBtns;
     private rightBtns;
     private leftG;
@@ -50,7 +52,9 @@ export declare class Visual implements IVisual {
     private allExpanded;
     private host;
     private ganttdataPoints;
-    private currentZoomTransform;
+    private currentZoomTransform?;
+    private isZooming;
+    private y;
     private getGroupBarPath;
     constructor(opts: VisualConstructorOptions);
     update(opts: VisualUpdateOptions): void;
@@ -59,4 +63,5 @@ export declare class Visual implements IVisual {
     private parseData;
     private buildRows;
     private redrawZoomedElements;
+    private updateSelectedFormatFromZoom;
 }
