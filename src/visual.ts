@@ -190,10 +190,7 @@ export class Visual implements IVisual {
   private host: IVisualHost;
   private ganttdataPoints: GanttDataPoint[]
   private currentZoomTransform?: d3.ZoomTransform;
-  private isZooming: boolean = false;
   private y: d3.ScaleBand<string>;
-  private lastFormatRendered: FormatType | null = null;
-  private lastVisibleDomain: [Date, Date] | null = null;
 
 
   private getGroupBarPath(
@@ -821,6 +818,8 @@ export class Visual implements IVisual {
     // WEEKEND BBARRA 
     if (this.fmtSettings.weekendCard.show.value) {
       const backgroundG = this.ganttG.append("g").attr("class", "background-grid");
+
+
       if (this.selectedFormat === "Mes") {
         const months = d3.timeMonths(xStart, xEnd);
         backgroundG.selectAll("line.month")
@@ -835,6 +834,7 @@ export class Visual implements IVisual {
           .attr("stroke-width", 1)
           .attr("class", "month");
       }
+
       if (this.selectedFormat === "Hora") {
         const dias = d3.timeDays(xStart, xEnd);
         backgroundG.selectAll("line.day")
@@ -849,17 +849,17 @@ export class Visual implements IVisual {
           .attr("stroke-width", 1)
           .attr("class", "day");
       }
+
       if (this.selectedFormat === "Día" || this.selectedFormat === "Todo") {
         const dias = d3.timeDays(xStart, xEnd);
         backgroundG.selectAll("rect.weekend")
-          .data(dias.filter(d => d.getDay() === 6)) // solo sábados
+          .data(dias.filter(d => d.getDay() === 6)) // sábados
           .enter()
           .append("rect")
           .attr("x", d => x(d))
-          .attr("y", -3)
-          .attr("y2", margin.bottom)
+          .attr("y", 0)
           .attr("width", d => x(d3.timeDay.offset(d, 2)) - x(d))
-          .attr("height", innerH + 3)
+          .attr("height", innerH)
           .attr("fill", this.fmtSettings.weekendCard.markerColor.value.value)
           .attr("class", "weekend");
       }
@@ -1058,10 +1058,6 @@ export class Visual implements IVisual {
         }
       );
     }
-
-
-
-    const ax = this.fmtSettings.axisXCard;
 
     this.axisTopContentG = this.xAxisFixedG
       .append("g")

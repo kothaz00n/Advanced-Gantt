@@ -8,7 +8,6 @@ interface FormatButtonsProps {
 }
 
 export function renderFormatButtons({ container, selectedFormat, onFormatChange }: FormatButtonsProps) {
-  // Limpia cualquier contenedor previo
   d3.select(container).selectAll(".btn-container").remove();
 
   const formatos = ["Hora", "Día", "Mes", "Año", "Todo"];

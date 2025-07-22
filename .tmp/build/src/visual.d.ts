@@ -53,10 +53,7 @@ export declare class Visual implements IVisual {
     private host;
     private ganttdataPoints;
     private currentZoomTransform?;
-    private isZooming;
     private y;
-    private lastFormatRendered;
-    private lastVisibleDomain;
     private getGroupBarPath;
     constructor(opts: VisualConstructorOptions);
     update(opts: VisualUpdateOptions): void;
