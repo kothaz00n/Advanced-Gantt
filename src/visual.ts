@@ -820,20 +820,7 @@ export class Visual implements IVisual {
       const backgroundG = this.ganttG.append("g").attr("class", "background-grid");
 
 
-      if (this.selectedFormat === "Mes") {
-        const months = d3.timeMonths(xStart, xEnd);
-        backgroundG.selectAll("line.month")
-          .data(months)
-          .enter()
-          .append("line")
-          .attr("x1", d => x(d))
-          .attr("x2", d => x(d))
-          .attr("y1", 0)
-          .attr("y2", innerH)
-          .attr("stroke", this.fmtSettings.weekendCard.markerColor.value.value)
-          .attr("stroke-width", 1)
-          .attr("class", "month");
-      }
+      
 
       if (this.selectedFormat === "Hora") {
         const dias = d3.timeDays(xStart, xEnd);
@@ -852,6 +839,7 @@ export class Visual implements IVisual {
 
       if (this.selectedFormat === "Día" || this.selectedFormat === "Todo") {
         const dias = d3.timeDays(xStart, xEnd);
+        console.log("Formato de if weekend: " + this.selectedFormat)
         backgroundG.selectAll("rect.weekend")
           .data(dias.filter(d => d.getDay() === 6)) // sábados
           .enter()
@@ -1059,6 +1047,9 @@ export class Visual implements IVisual {
       );
     }
 
+
+
+
     this.axisTopContentG = this.xAxisFixedG
       .append("g")
       .attr("class", "axis-top-content")
@@ -1223,6 +1214,61 @@ export class Visual implements IVisual {
     y: d3.ScaleBand<string>,
     barH: number
   ) {
+        const days = d3.timeDays(newX.domain()[0], newX.domain()[1]);
+
+    if (this.selectedFormat === "Día") {
+      this.ganttG.selectAll<SVGLineElement, Date>("line.day")
+        .data(days, d => d.getTime().toString())
+        .join(
+          enter => enter.append("line")
+            .attr("class", "day")
+            .attr("y1", 0)
+            .attr("y2", innerHeight)
+            .attr("stroke", "#e0e0e0")
+            .attr("stroke-width", 1)
+            .attr("zindex", "-100")
+            .attr("x1", d => newX(d))
+            .attr("x2", d => newX(d)),
+          update => update
+            .attr("x1", d => newX(d))
+            .attr("x2", d => newX(d)),
+          exit => exit.remove()
+        );
+        this.ganttG.selectAll<SVGLineElement, Date>("rect.weekend")
+          .data(days.filter(d => d.getDay() === 6)) // sábados
+          .enter()
+          .append("rect")
+          .attr("x", d => newX(d))
+          .attr("y", 0)
+          .attr("width", d => newX(d3.timeDay.offset(d, 2)) - newX(d))
+          .attr("height", innerHeight)
+          .attr("fill", this.fmtSettings.weekendCard.markerColor.value.value)
+          .attr("class", "weekend");
+
+          this.ganttG.selectAll("line.day").lower();
+          this.ganttG.selectAll("rect.weekend").lower();
+    }else{
+      this.ganttG.selectAll("line.day").remove()
+      this.ganttG.selectAll("rect.weekend").remove();
+    }
+
+    if (this.selectedFormat === "Mes") {
+        const months = d3.timeMonths(newX.domain()[0], newX.domain()[1]);
+        this.ganttG.selectAll<SVGLineElement, Date>("line.month")
+          .data(months)
+          .enter()
+          .append("line")
+          .attr("x1", d => newX(d))
+          .attr("x2", d => newX(d))
+          .attr("y1", -10)
+          .attr("y2", innerHeight)
+          .attr("stroke", this.fmtSettings.weekendCard.markerColor.value.value)
+          .attr("stroke-width", 1)
+          .attr("class", "month");
+
+          this.ganttG.selectAll("line.month").lower();
+      } else { this.ganttG.selectAll("line.month").remove() }
+
     // Redibuja barras estándar
     this.ganttG.selectAll<SVGRectElement, BarDatum>(".bar")
       .filter(d => !d.isGroup)
@@ -1325,10 +1371,6 @@ export class Visual implements IVisual {
       .attr("width", d => newX(d3.timeDay.offset(d, 2)) - newX(d));
 
     this.ganttG.selectAll<SVGLineElement, Date>("line.month")
-      .attr("x1", d => newX(d))
-      .attr("x2", d => newX(d));
-
-    this.ganttG.selectAll<SVGLineElement, Date>("line.day")
       .attr("x1", d => newX(d))
       .attr("x2", d => newX(d));
 
