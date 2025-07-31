@@ -66,6 +66,9 @@ declare class HeaderCardSettings extends SimpleCard {
 declare class TaskCardSetting extends SimpleCard {
     show: formattingSettings.ToggleSwitch;
     taskHeight: formattingSettings.NumUpDown;
+    taskWidth: formattingSettings.NumUpDown;
+    startWidth: formattingSettings.NumUpDown;
+    endWidth: formattingSettings.NumUpDown;
     fontColor: formattingSettings.ColorPicker;
     fontSize: formattingSettings.NumUpDown;
     fontFamily: formattingSettings.FontPicker;

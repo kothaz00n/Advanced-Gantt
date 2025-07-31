@@ -521,6 +521,27 @@
           "type": {
             "integer": true
           }
+        },
+        "taskWidth": {
+          "displayName": "Ancho campo de tarea",
+          "description": "Altura en píxeles; 0 = automático",
+          "type": {
+            "integer": true
+          }
+        },
+        "startWidth": {
+          "displayName": "Ancho campo de inicio",
+          "description": "Altura en píxeles; 0 = automático",
+          "type": {
+            "integer": true
+          }
+        },
+        "endWidth": {
+          "displayName": "Ancho campo de fin",
+          "description": "Altura en píxeles; 0 = automático",
+          "type": {
+            "integer": true
+          }
         }
       }
     },

@@ -432,17 +432,30 @@ export class Visual implements IVisual {
 
     this.leftBtns.style("display", hasData ? "block" : "none");
     this.rightBtns.style("display", hasData ? "block" : "none");
-    const baseCols = 2;
-    const visibleFieldsCount = this.taskColCount;
-    const hasD = this.cacheTasks.some(t => t.fields.length > this.taskColCount);
-    const totalCols = baseCols + visibleFieldsCount + (hasD ? 1 : 0);
+    const pad = 10;
 
-    const colW = 180, pad = 10;
-    const durColWidth = 100;
-    const colWidths = Array(totalCols).fill(colW);
-    if (hasD) {
-      colWidths[totalCols - 1] = durColWidth;
+    const hasD = this.cacheTasks.some(t => t.fields.length > this.taskColCount);
+    const totalCols = 2 + this.taskColCount + (hasD ? 1 : 0);
+
+    // Definí anchos por columna, en el orden:
+    // Tarea, Inicio, Fin, [campos personalizados], Duración
+    const colWidths: number[] = [];
+
+    // Base columns
+    colWidths.push(this.fmtSettings.taskCard.taskWidth.value); // Tarea
+    colWidths.push(this.fmtSettings.taskCard.startWidth.value); // Inicio
+
+    // Campos adicionales (campos personalizados en task.fields)
+    for (let i = 0; i < this.taskColCount - 2; i++) {
+      colWidths.push(180); // podés personalizar más si querés
     }
+
+    colWidths.push(this.fmtSettings.taskCard.endWidth.value); // Fin
+
+    if (hasD) {
+      colWidths.push(100); // Duración
+    }
+
 
     const margin = {
       top: 60,
@@ -995,7 +1008,7 @@ export class Visual implements IVisual {
         .attr("rx", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
         .attr("ry", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value);
       // (STD) COMPLETADO
-      
+
       this.ganttG.selectAll<SVGTextElement, BarDatum>(".completion-label")
         .data(allBars.filter(d =>
           !d.isGroup &&

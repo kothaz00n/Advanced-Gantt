@@ -270,6 +270,27 @@ class TaskCardSetting extends SimpleCard {
         value: 40
     });
 
+    taskWidth = new NumUpDown({
+        name: "taskWidth",
+        displayName: "Ancho columna de tarea",
+        description: "Altura en píxeles; 0 = automático",
+        value: 250
+    });
+
+    startWidth = new NumUpDown({
+        name: "startWidth",
+        displayName: "Ancho columna de inicio",
+        description: "Altura en píxeles; 0 = automático",
+        value: 160
+    });
+
+    endWidth = new NumUpDown({
+        name: "endWidth",
+        displayName: "Ancho columna de fin",
+        description: "Altura en píxeles; 0 = automático",
+        value: 160
+    });
+
     fontColor = new ColorPicker({
         name: "fontColor",
         displayName: "Color de fuente",
@@ -290,7 +311,7 @@ class TaskCardSetting extends SimpleCard {
 
     name = "taskStyle";
     displayName = "Tareas";
-    slices: FormattingSettingsSlice[] = [this.show, this.taskHeight, this.fontColor, this.fontSize, this.fontFamily];
+    slices: FormattingSettingsSlice[] = [this.show, this.taskHeight, this.fontColor, this.fontSize, this.fontFamily, this.taskWidth, this.startWidth, this.endWidth ];
 }
 
 /* ────────────────────────────────
