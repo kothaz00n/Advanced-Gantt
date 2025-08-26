@@ -3,11 +3,10 @@ import * as d3 from "d3";
 
 interface FormatButtonsProps {
   container: HTMLElement;
-  selectedFormat: string;
   onFormatChange: (fmt: string) => void;
 }
 
-export function renderFormatButtons({ container, selectedFormat, onFormatChange }: FormatButtonsProps) {
+export function renderFormatButtons({ container, onFormatChange }: FormatButtonsProps) {
   d3.select(container).selectAll(".btn-container").remove();
 
   const formatos = ["Hora", "Día", "Mes", "Año", "Todo"];
@@ -21,11 +20,13 @@ export function renderFormatButtons({ container, selectedFormat, onFormatChange 
     .append("button")
     .text(fmt => fmt)
     .attr("data-format", fmt => fmt)
-    .attr("type", "button")
-    .attr("class", fmt => fmt === selectedFormat ? "active" : "");
+    .attr("type", "button");
 
+  // cuando clickeás, dispara el cambio de rango
   btns.on("click", (event, fmt) => {
     onFormatChange(fmt);
+
+    // visualmente marcamos el activo
     btns.attr("class", d => d === fmt ? "active" : "");
   });
 }

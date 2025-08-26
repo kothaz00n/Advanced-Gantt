@@ -30,12 +30,17 @@ import FormattingId = powerbi.visuals.FormattingId;
 // Interfaces
 interface Task {
   id: string;
-  parent: string | null;
-  start: Date;
-  end: Date;
+  parent: string;
+  start: Date | null;
+  end: Date | null;
   fields: string[];
   completion?: number;
+  secondaryStart?: Date;
+  secondaryEnd?: Date;
+  predecessor?: string;
+  index: number;
 }
+
 interface VisualRow {
   id: string;
   isGroup: boolean;
@@ -58,6 +63,9 @@ export interface BarDatum {
   isGroup: boolean;
   index: number;
   completion?: number;
+  secondaryStart?: Date;
+  secondaryEnd?: Date;
+  selectionId: ISelectionID;  // 👈 agregar esta línea
 }
 
 const enum GanttObjectNames {
@@ -82,6 +90,8 @@ export interface GanttDataPoint {
   selectionId: ISelectionID;
   index: number;
   completion?: number;
+  secondaryStart?: Date;
+  secondaryEnd?: Date;
 }
 
 // Funciones
@@ -128,7 +138,6 @@ function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHos
 
   return dataPoints;
 }
-
 
 function getColumnColorByIndex(
   category: DataViewCategoryColumn,
@@ -179,8 +188,13 @@ export class Visual implements IVisual {
   private xAxisFixedSVG: d3.Selection<SVGSVGElement, unknown, null, undefined>;
   private expanded = new Map<string, boolean>();
   private cacheTasks: Task[] = [];
-  private groupRange = new Map<string, { start: Date; end: Date }>();
-  private selectedFormat: FormatType = "Todo";
+  private groupRange = new Map<string, {
+    start: Date;
+    end: Date;
+    secondaryStart?: Date;
+    secondaryEnd?: Date;
+  }>();
+  private selectedFormat: FormatType = "Año";
   private lastOptions: VisualUpdateOptions;
   private taskColCount = 0;
   private taskColNames: string[] = [];
@@ -192,7 +206,42 @@ export class Visual implements IVisual {
   private ganttdataPoints: GanttDataPoint[]
   private currentZoomTransform?: d3.ZoomTransform;
   private y: d3.ScaleBand<string>;
+  private marginLeft: number = 0;
+  private width: number = 0;
+  private innerW: number = 0;
+  private xOriginal: d3.ScaleTime<number, number>;
+  private barH: number = 40;
+  private zoomBehavior!: d3.ZoomBehavior<SVGSVGElement, unknown>;
 
+
+
+
+
+  private computeInnerW(format: FormatType, start: Date, end: Date, width: number, margin: { left: number; right: number; }): number {
+    const diffInDays = d3.timeDay.count(start, end);
+    switch (format) {
+      case "Hora": {
+        const numHours = d3.timeHour.count(start, end);
+        return Math.max(numHours * 38, 3000);
+      }
+      case "Día": {
+        const numDays = diffInDays;
+        return Math.max(numDays * 15, 3000);
+      }
+      case "Mes": {
+        const numMonths = d3.timeMonth.count(start, end);
+        return Math.max(numMonths * 90, 3000);
+      }
+      case "Año": {
+        const numYears = d3.timeYear.count(start, end);
+        return Math.max(numYears * 15, 3000);
+      }
+      case "Todo":
+        return Math.max(diffInDays * 38, width - margin.left - margin.right);
+      default:
+        return width - margin.left - margin.right;
+    }
+  }
 
   private getGroupBarPath(
     scaleX: d3.ScaleTime<number, number>,
@@ -204,8 +253,6 @@ export class Visual implements IVisual {
     const x1 = scaleX(d.start);
     const x2 = scaleX(d.end);
     const width = x2 - x1;
-
-    this.fmtSettings.adminCard.Alto.value
 
     const yTop = scaleY(d.rowKey)! + (taskHeight - barHeight) / 2;
     const topHeight = barHeight * 0.5; // Ancho de la barra de arriba
@@ -237,7 +284,6 @@ export class Visual implements IVisual {
       .filter(c => !isNaN(c));
 
     if (!completions.length) {
-      console.warn(`Sin completions válidos para grupo ${rowKey}`);
       return 0;
     }
 
@@ -245,10 +291,6 @@ export class Visual implements IVisual {
     const boundedAvg = Math.max(0, Math.min(1, avg > 1 ? avg / 100 : avg));
     return boundedAvg;
   }
-
-
-
-
 
   constructor(opts: VisualConstructorOptions) {
     this.container = opts.element as HTMLElement;
@@ -284,7 +326,7 @@ export class Visual implements IVisual {
         allExpanded: this.allExpanded,
         onChange: onChangeHandler
       });
-      this.update(this.lastOptions);
+      this.update(this.lastOptions, true); // preserva scroll y zoom
     };
 
     renderParentToggleButtons({
@@ -295,27 +337,22 @@ export class Visual implements IVisual {
 
     renderFormatButtons({
       container: this.rightBtns.node() as HTMLElement,
-      selectedFormat: this.selectedFormat,
       onFormatChange: (fmt: string) => {
-        if (["Hora", "Día", "Mes", "Año", "Todo"].includes(fmt)) {
-          this.selectedFormat = fmt as FormatType;
-          this.update(this.lastOptions);
+        const [newMin, newMax] = this.getDateRangeFromFormat(fmt as FormatType);
 
-          setTimeout(() => {
-            const svgWidth = this.ganttSVG.node()?.getBoundingClientRect().width ?? 0;
-            const divWidth = this.ganttDiv.node()?.getBoundingClientRect().width ?? 0;
+        // 2. aplicar el rango al zoom → esto mueve la cámara
+        this.zoomToRange(newMin, newMax);
 
-            if (svgWidth > divWidth && this.ganttSVG) {
-              const offsetX = (divWidth - svgWidth) / 2;
-              this.ganttDiv.node()?.scrollTo({
-                left: -offsetX,
-                behavior: "smooth"
-              });
-            }
-          }, 50);
-        }
+        // ⚠️ importante: acá NO tocamos this.selectedFormat
+        // lo decide updateSelectedFormatFromZoom()
       }
     });
+
+
+
+
+
+
 
 
     const layoutDiv = d3.select(this.container)
@@ -383,42 +420,23 @@ export class Visual implements IVisual {
     this.landingG = this.ganttSVG.append("g")
       .attr("class", "landing")
       .style("pointer-events", "none");
-
-    let isDragging = false;
-    let startX = 0;
-    let startY = 0;
-    let scrollLeft = 0;
-    let scrollTop = 0;
-    this.ganttDiv
-      .on("mousedown", (event: MouseEvent) => {
-        isDragging = true;
-        startX = event.pageX - this.ganttDiv.node()!.offsetLeft;
-        startY = event.pageY - this.ganttDiv.node()!.offsetTop;
-        scrollLeft = this.ganttDiv.node()!.scrollLeft;
-        scrollTop = this.ganttDiv.node()!.scrollTop;
-        this.ganttDiv.style("cursor", "grabbing");
-        event.preventDefault();
-      })
-      .on("mouseleave", () => {
-        isDragging = false;
-        this.ganttDiv.style("cursor", "default");
-      })
-      .on("mouseup", () => {
-        isDragging = false;
-        this.ganttDiv.style("cursor", "default");
-      })
-      .on("mousemove", (event: MouseEvent) => {
-        if (!isDragging) return;
-        const x = event.pageX - this.ganttDiv.node()!.offsetLeft;
-        const y = event.pageY - this.ganttDiv.node()!.offsetTop;
-        const walkX = x - startX;
-        const walkY = y - startY;
-        this.ganttDiv.node()!.scrollLeft = scrollLeft - walkX;
-        this.ganttDiv.node()!.scrollTop = scrollTop - walkY;
-      });
   }
 
-  public update(opts: VisualUpdateOptions): void {
+  public update(opts: VisualUpdateOptions, preserveView = false): void {
+    let savedScrollTop: number | undefined;
+    let savedScrollLeft: number | undefined;
+    let savedZoom: d3.ZoomTransform | undefined;
+
+    if (preserveView) {
+      savedScrollTop = this.ganttDiv?.node()?.scrollTop ?? 0;
+      savedScrollLeft = this.ganttDiv?.node()?.scrollLeft ?? 0;
+      if (this.ganttSVG) {
+        savedZoom = d3.zoomTransform(this.ganttSVG.node() as any);
+      }
+    }
+
+
+    this.host.eventService?.renderingStarted?.(opts.viewport);
 
     this.fmtSettings = this.fmtService.populateFormattingSettingsModel(VisualFormattingSettingsModel, opts.dataViews?.[0]);
     this.ganttdataPoints = createSelectorDataPoints(opts, this.host)
@@ -437,15 +455,11 @@ export class Visual implements IVisual {
     const hasD = this.cacheTasks.some(t => t.fields.length > this.taskColCount);
     const totalCols = 2 + this.taskColCount + (hasD ? 1 : 0);
 
-    // Definí anchos por columna, en el orden:
-    // Tarea, Inicio, Fin, [campos personalizados], Duración
     const colWidths: number[] = [];
 
-    // Base columns
     colWidths.push(this.fmtSettings.taskCard.taskWidth.value); // Tarea
     colWidths.push(this.fmtSettings.taskCard.startWidth.value); // Inicio
 
-    // Campos adicionales (campos personalizados en task.fields)
     for (let i = 0; i < this.taskColCount - 2; i++) {
       colWidths.push(180); // podés personalizar más si querés
     }
@@ -457,12 +471,16 @@ export class Visual implements IVisual {
     }
 
 
+    this.width = opts.viewport.width;
+    this.marginLeft = pad + colWidths.reduce((acc, w) => acc + w, 0);
+
     const margin = {
       top: 60,
       right: 20,
       bottom: 60,
-      left: pad + colWidths.reduce((acc, w) => acc + w, 0)
+      left: this.marginLeft
     };
+
 
     this.yAxisSVG.selectAll("*").remove();
     this.ganttSVG.selectAll("*").remove();
@@ -504,45 +522,23 @@ export class Visual implements IVisual {
     let xEnd = d3.max(this.cacheTasks, d => d.end)!;
     if (xStart >= xEnd) xEnd = new Date(xStart.getTime() + 3_600_000);
 
-    let innerW = 0;
-    const diffInDays = d3.timeDay.count(xStart, xEnd);
-    const effectiveFormat = this.updateSelectedFormatFromZoom(diffInDays);
+    // 1) Calcular ancho lógico ANTES de crear las escalas
+    this.innerW = this.computeInnerW(this.selectedFormat, xStart, xEnd, width, margin);
 
-    switch (effectiveFormat) {
-      case "Hora":
-        const numHours = d3.timeHour.count(xStart, xEnd);
-        innerW = Math.max(numHours * 38, width - margin.left - margin.right);
-        break;
-      case "Día":
-        const numDays = diffInDays;
-        innerW = Math.max(numDays * 38, width - margin.left - margin.right);
-        break;
-      case "Mes":
-        const numMonths = d3.timeMonth.count(xStart, xEnd);
-        innerW = Math.max(numMonths * 90, width - margin.left - margin.right);
-        break;
-      case "Año":
-        const numYears = d3.timeYear.count(xStart, xEnd);
-        innerW = Math.max(numYears * 15, width - margin.left - margin.right);
-        break;
-      case "Todo":
-        innerW = Math.max(diffInDays * 38, width - margin.left - margin.right);
-        break;
-      default:
-        innerW = width - margin.left - margin.right;
-    }
-
+    // 2) Crear escalas usando el range correcto
     let x: d3.ScaleTime<number, number>;
-    let xOriginal: d3.ScaleTime<number, number>;
 
     if (this.currentZoomTransform) {
-      xOriginal = d3.scaleTime().domain([xStart, xEnd]).range([0, innerW]);
-      x = this.currentZoomTransform.rescaleX(xOriginal);
+      this.xOriginal = d3.scaleTime()
+        .domain([xStart, xEnd])
+        .range([0, this.innerW]);
+      x = this.currentZoomTransform.rescaleX(this.xOriginal);
     } else {
-      x = d3.scaleTime().domain([xStart, xEnd]).range([0, innerW]);
-      xOriginal = x.copy();
+      this.xOriginal = d3.scaleTime()
+        .domain([xStart, xEnd])
+        .range([0, this.innerW]);
+      x = this.xOriginal.copy();
     }
-
 
 
     this.y = d3.scaleBand()
@@ -556,11 +552,11 @@ export class Visual implements IVisual {
       .attr("width", margin.left)
       .attr("height", innerH + margin.top + margin.bottom);
     this.ganttSVG
-      .attr("width", innerW + margin.right)
+      .attr("width", this.innerW + margin.right)
       .attr("height", innerH + margin.top + margin.bottom);
 
     this.xAxisFixedSVG
-      .attr("width", innerW + margin.right)
+      .attr("width", this.innerW + margin.right)
       .attr("height", 60);
 
     const colX = (i: number) => pad + colWidths.slice(0, i).reduce((acc, w) => acc + w, 0);
@@ -574,38 +570,44 @@ export class Visual implements IVisual {
       .attr("transform", `translate(0, ${margin.top})`);
     const gridYPos = visibleRows.map(r => this.y(r.rowKey)!);
 
+    // 1) Extender dominio base para evitar pared invisible en zoom
+    const [origMin, origMax] = this.xOriginal.domain();
+    const bufferDias = 365; // margen: 1 año extra a cada lado
+    const minDateExt = d3.timeDay.offset(origMin, -bufferDias);
+    const maxDateExt = d3.timeDay.offset(origMax, bufferDias);
+    this.xOriginal.domain([minDateExt, maxDateExt]);
 
-    const extentBuffer = 2000;
+    // 2) Variables para drag vertical/horizontal
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let scrollTopStart = 0;
 
-    const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
+    this.zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.35, 100])
-      .translateExtent([[-extentBuffer, 0], [innerW + extentBuffer, 0]])
+      .translateExtent([[-1e9, -1e9], [1e9, 1e9]]) // pan libre
+      .filter((event) => {
+        // permitir rueda para zoom y arrastre para pan
+        return !event.ctrlKey || event.type === "wheel" || event.type === "mousedown";
+      })
       .on("zoom", (event) => {
-        let t = event.transform;
+        const t = event.transform;
+        const newX = t.rescaleX(this.xOriginal);
 
-        // Escala resultante con transform actual
-        let newX = t.rescaleX(xOriginal);
-        let minDate = new Date("2021-01-01");
-        let maxDate = new Date("2026-12-31");
-
-        // Recalcular con transform corregido
         this.currentZoomTransform = t;
-        newX = t.rescaleX(xOriginal);
-        [minDate, maxDate] = newX.domain();
 
-        // Redibujar elementos
-        this.redrawZoomedElements(newX, this.y, barH);
+        this.redrawZoomedElements(newX, this.y, this.barH);
+        const newFormat = this.updateSelectedFormatFromZoom(t, width);
+        if (newFormat !== this.selectedFormat) {
+          this.selectedFormat = newFormat;
+          this.updateFormatButtonsUI(this.selectedFormat);
+        }
 
-        // Actualizar formato según días visibles
-        const diffInDays = (maxDate.getTime() - minDate.getTime()) / (1000 * 3600 * 24);
-        this.selectedFormat = this.updateSelectedFormatFromZoom(diffInDays);
-
-        // Redibujar ejes
         renderXAxisTop({
           xScale: newX,
           svg: this.axisTopContentG,
           height: 30,
-          width: width,
+          width,
           selectedFormat: this.selectedFormat,
           translateX: margin.left,
           fmtSettings: this.fmtSettings
@@ -615,15 +617,58 @@ export class Visual implements IVisual {
           xScale: newX,
           svg: this.axisBottomContentG,
           height: 30,
-          width: width,
+          width,
           selectedFormat: this.selectedFormat,
           translateX: margin.left,
           fmtSettings: this.fmtSettings
         });
-
       });
 
-    this.ganttSVG.call(zoomBehavior);
+    this.ganttSVG
+      .call(this.zoomBehavior)
+      .on("mousedown.zoom", null)
+      .on("dblclick.zoom", null)
+      .on("touchstart.zoom", null);
+
+    this.ganttSVG
+      .on("dblclick", () => {
+        const [minDate, maxDate] = this.xOriginal.domain();
+
+        // al hacer doble clic, centramos todo el rango en la vista
+        this.zoomToRange(minDate, maxDate);
+      });
+
+    let rafPending = false;
+    this.ganttDiv
+      .on("mousedown", (event: MouseEvent) => {
+        isDragging = true;
+        startX = event.clientX;
+        startY = event.clientY;
+        scrollTopStart = this.ganttDiv.node()!.scrollTop;
+        this.ganttDiv.style("cursor", "grabbing");
+        event.preventDefault();
+      })
+      .on("mouseup mouseleave", () => {
+        isDragging = false;
+        this.ganttDiv.style("cursor", "default");
+      })
+      .on("mousemove", (event: MouseEvent) => {
+        if (!isDragging || rafPending) return;
+        rafPending = true;
+
+        requestAnimationFrame(() => {
+          const dx = event.clientX - startX;
+          const dy = event.clientY - startY;
+
+          const t = d3.zoomTransform(this.ganttSVG.node()!);
+          this.ganttSVG.call(this.zoomBehavior.translateBy, dx / t.k, 0);
+          this.ganttDiv.node()!.scrollTop -= dy;
+
+          startX = event.clientX;
+          startY = event.clientY;
+          rafPending = false;
+        });
+      });
 
     this.ganttSVG.on("wheel", (event: WheelEvent) => {
       event.preventDefault();
@@ -641,7 +686,6 @@ export class Visual implements IVisual {
         .attr("y2", d => d)
         .attr("stroke", this.fmtSettings.axisYCard.lineColor.value.value)
         .attr("stroke-width", 1);
-
 
       const head = this.leftG.append("g")
         .attr("class", "header")
@@ -670,14 +714,14 @@ export class Visual implements IVisual {
           .attr("font-size", headFmt.fontSize.value)
           .attr("font-family", headFmt.fontFamily.value)
       );
-      head.append("text").text("Inicio")
+      head.append("text").text("Inicio P")
         .attr("x", colX(this.taskColCount))
         .attr("y", -10)
         .attr("zindex", 999)
         .attr("fill", headFmt.fontColor.value.value)
         .attr("font-size", headFmt.fontSize.value)
         .attr("font-family", headFmt.fontFamily.value);
-      head.append("text").text("Fin")
+      head.append("text").text("Fin P")
         .attr("x", colX(this.taskColCount + 1))
         .attr("y", -10)
         .attr("zindex", 999)
@@ -714,16 +758,24 @@ export class Visual implements IVisual {
             .attr("width", margin.left)
             .attr("height", yScale.bandwidth())
             .attr("fill", parFmt.backgroundColor.value.value);
+
           const exp = self.expanded.get(row.id) ?? true;
-          g.append("text")
-            .text(exp ? "▼ " + row.labelY : "▶ " + row.labelY)
+
+          let key: string | undefined;
+          if (row.rowKey?.startsWith("G:")) key = row.rowKey.slice(2);
+          else if (row.rowKey?.includes("|")) key = row.rowKey.split("|")[1]; // por si acaso
+
+          const dp = self.ganttdataPoints.find(p => p.parent === key);
+          const triColor = dp?.color ?? parFmt.fontColor.value.value;
+
+          const label = g.append("text")
             .attr("x", 5)
             .attr("y", top + yScale.bandwidth() / 2 + 4)
             .attr("font-weight", "bold")
             .attr("cursor", "pointer")
             .attr("font-family", parFmt.fontFamily.value)
             .attr("font-size", parFmt.fontSize.value)
-            .attr("fill", parFmt.fontColor.value.value)
+            .attr("data-rowKey", row.rowKey)   // 👈 agregar esto
             .on("click", () => {
               self.expanded.set(row.id, !exp);
               const expandedValues = Array.from(self.expanded.values());
@@ -731,6 +783,11 @@ export class Visual implements IVisual {
               self.update(self.lastOptions);
             });
 
+          label.text(null);
+          label.append("tspan").attr("fill", triColor).text(exp ? "▼" : "▶");
+          label.append("tspan").attr("fill", parFmt.fontColor.value.value).text(" " + row.labelY);
+
+          // --- Resto igual ---
           const r = self.groupRange.get(row.id);
           if (r) {
             g.append("text").text(dateFmt(r.start))
@@ -740,6 +797,7 @@ export class Visual implements IVisual {
               .attr("fill", parFmt.fontColor.value.value)
               .attr("font-size", parFmt.fontSize.value)
               .attr("font-family", parFmt.fontFamily.value);
+
             g.append("text").text(dateFmt(r.end))
               .attr("x", colX(self.taskColCount + 1))
               .attr("y", top + yScale.bandwidth() / 2 + 4)
@@ -748,6 +806,7 @@ export class Visual implements IVisual {
               .attr("font-size", parFmt.fontSize.value)
               .attr("font-family", parFmt.fontFamily.value);
           }
+
           if (row.duration !== undefined && hasD) {
             g.append("text").text(String(row.duration))
               .attr("x", colX(self.taskColCount + 2))
@@ -757,7 +816,6 @@ export class Visual implements IVisual {
               .attr("font-size", parFmt.fontSize.value)
               .attr("font-family", parFmt.fontFamily.value);
           }
-
         } else if (row.task) {
           const hasDuration = row.task.fields.length > self.taskColCount;
           const durationIndex = hasDuration ? row.task.fields.length - 1 : -1;
@@ -771,8 +829,10 @@ export class Visual implements IVisual {
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-size", taskFmt.fontSize.value)
               .attr("fill", taskFmt.fontColor.value.value)
-              .attr("font-family", taskFmt.fontFamily.value);
+              .attr("font-family", taskFmt.fontFamily.value)
+              .attr("data-rowKey", row.rowKey);   // 👈 identificador para hover
           });
+
           g.append("text")
             .text(row.task.start && !isNaN(row.task.start.getTime())
               ? dateFmt(row.task.start)
@@ -781,7 +841,9 @@ export class Visual implements IVisual {
             .attr("y", top + yScale.bandwidth() / 2 + 4)
             .attr("font-size", taskFmt.fontSize.value)
             .attr("fill", taskFmt.fontColor.value.value)
-            .attr("font-family", taskFmt.fontFamily.value);
+            .attr("font-family", taskFmt.fontFamily.value)
+            .attr("data-rowKey", row.rowKey);     // 👈 también acá
+
           g.append("text")
             .text(row.task.end && !isNaN(row.task.end.getTime())
               ? dateFmt(row.task.end)
@@ -790,7 +852,8 @@ export class Visual implements IVisual {
             .attr("y", top + yScale.bandwidth() / 2 + 4)
             .attr("font-size", taskFmt.fontSize.value)
             .attr("fill", taskFmt.fontColor.value.value)
-            .attr("font-family", taskFmt.fontFamily.value);
+            .attr("font-family", taskFmt.fontFamily.value)
+            .attr("data-rowKey", row.rowKey);     // 👈 también acá
 
           if (hasDuration) {
             const durationVal = row.task.fields[durationIndex];
@@ -799,8 +862,10 @@ export class Visual implements IVisual {
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-size", taskFmt.fontSize.value)
               .attr("fill", taskFmt.fontColor.value.value)
-              .attr("font-family", taskFmt.fontFamily.value);
+              .attr("font-family", taskFmt.fontFamily.value)
+              .attr("data-rowKey", row.rowKey);   // 👈 también acá
           }
+
         }
 
       });
@@ -833,35 +898,42 @@ export class Visual implements IVisual {
         .attr("stroke-width", 2);
     }
 
-
     this.ganttG = this.ganttSVG.append("g").attr("transform", `translate(0, ${margin.top})`);
 
-
-
     const barCfg = this.fmtSettings.barCard;
-    const barH = Math.min((this.fmtSettings.barCard.barGroup.slices.find(s => s.name === "barHeight") as formattingSettings.NumUpDown)?.value ?? 30, rowH);
-    const yOff = (taskFmt.taskHeight.value - barH) / 2;
+    this.barH = Math.min((this.fmtSettings.barCard.barGroup.slices.find(s => s.name === "barHeight") as formattingSettings.NumUpDown)?.value ?? 30, rowH);
+    const yOff = (taskFmt.taskHeight.value - this.barH) / 2;
+
+    const categorical = opts.dataViews[0].categorical;
+    const taskCategory = categorical.categories[0]; // 👈 una sola columna
 
     const taskBars: BarDatum[] = visibleRows
       .filter(r => !r.isGroup && r.task)
-      .map((r, i) => ({
+      .map(r => ({
         id: r.task!.id,
         start: r.task!.start,
         end: r.task!.end,
         rowKey: r.rowKey,
         isGroup: false,
-        index: i,
-        completion: r.task!.completion
+        index: r.task!.index,
+        completion: r.task!.completion,
+        secondaryStart: r.task!.secondaryStart ? new Date(r.task!.secondaryStart) : undefined,
+        secondaryEnd: r.task!.secondaryEnd ? new Date(r.task!.secondaryEnd) : undefined,
+        selectionId: this.host.createSelectionIdBuilder()
+          .withCategory(taskCategory, r.task!.index)
+          .createSelectionId() as ISelectionID
       }));
+
+    const parentCategory = categorical.categories[1];
 
     const groupBars: BarDatum[] = visibleRows
       .filter(r => r.isGroup)
       .map((r, i) => {
-        const { start, end } = this.groupRange.get(r.id)!;
+        const range = this.groupRange.get(r.id)!;
         return {
           id: r.id,
-          start,
-          end,
+          start: range.start,
+          end: range.end,
           rowKey: r.rowKey,
           isGroup: true,
           index: i,
@@ -874,24 +946,30 @@ export class Visual implements IVisual {
               rowKey: `T:${t.id}|${t.parent}`,
               isGroup: false,
               index: j,
-              completion: t.completion
+              completion: t.completion,
+              selectionId: this.host.createSelectionIdBuilder()
+                .withCategory(taskCategory, j)
+                .createSelectionId() as ISelectionID
             }))
-          )
+          ),
+          secondaryStart: range.secondaryStart ? new Date(range.secondaryStart) : undefined,
+          secondaryEnd: range.secondaryEnd ? new Date(range.secondaryEnd) : undefined,
+          selectionId: this.host.createSelectionIdBuilder()
+            .withCategory(parentCategory, i)
+            .createSelectionId() as ISelectionID
         };
       });
-
 
     const allBars = [...taskBars, ...groupBars].map((bar, i) => ({
       ...bar,
       gradientId: `bar-gradient-${i}`
     }));
 
-
     const defs = this.ganttSVG.append("defs");
+
     allBars.forEach(d => {
       if (!(d.start instanceof Date) || !(d.end instanceof Date)) return;
 
-      // 🔎 Obtener key según sea grupo o tarea
       let key: string | undefined;
       if (d.rowKey?.startsWith("G:")) {
         key = d.rowKey.slice(2); // quita "G:"
@@ -902,7 +980,7 @@ export class Visual implements IVisual {
       const dp = this.ganttdataPoints.find(p => p.parent === key);
 
       const baseColorStr = dp?.color ?? "#72c0ffff";
-      const colorBase = d3.color(baseColorStr);
+      const colorBase = d3.color(baseColorStr)!;
 
       const colorClaro = d3.interpolateRgb(colorBase, d3.color("#ffffff"))(0.5);
 
@@ -917,7 +995,6 @@ export class Visual implements IVisual {
       const safeCompletion = isNaN(raw) ? 0 : (raw > 1 ? raw / 100 : raw);
       const completion = Math.max(0, Math.min(1, safeCompletion));
 
-
       gradient.append("stop")
         .attr("offset", `${completion * 100}%`)
         .attr("stop-color", baseColorStr);
@@ -927,52 +1004,112 @@ export class Visual implements IVisual {
         .attr("stop-color", colorClaro);
     });
 
+    const dependencies: { from: string; to: string }[] = [];
 
+    visibleRows.forEach(row => {
+      const pred = row.task?.predecessor;
+      if (pred) {
+        const fromTask = visibleRows.find(r => r.labelY === pred);
 
+        if (
+          fromTask?.task?.start instanceof Date &&
+          !isNaN(fromTask.task.start.getTime()) &&
+          fromTask?.task?.end instanceof Date &&
+          !isNaN(fromTask.task.end.getTime()) &&
+          row.task?.start instanceof Date &&
+          !isNaN(row.task.start.getTime())
+        ) {
+          dependencies.push({ from: fromTask.id, to: row.id });
+        } else {
+        }
+      }
+    });
 
-
+    defs.append("marker")
+      .attr("id", "arrowhead")
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 10)
+      .attr("refY", 0)
+      .attr("markerWidth", 6)
+      .attr("markerHeight", 6)
+      .attr("orient", "auto")
+      .append("path")
+      .attr("d", "M0,-5L10,0L0,5")
+      .attr("fill", "#666");
 
 
     if (allBars.length) {
-      const bars = this.ganttG.selectAll<SVGElement, BarDatum>(".bar").attr("fill", d => {
-        const dp = this.ganttdataPoints.find(p => p.parent === d.rowKey.split("|")[1]);
-        return dp?.color ?? "#000";
-      })
-        .data(allBars, d => d.id)
-        .join(
-          enter => enter.append(d =>
-            document.createElementNS("http://www.w3.org/2000/svg", d.isGroup ? "path" : "rect")
-          ).attr("class", "bar"),
-          update => update,
-          exit => exit.remove()
-        );
-      bars.filter(d =>
-        !d.isGroup &&
-        d.start instanceof Date &&
-        !isNaN(d.start.getTime()) &&
-        d.end instanceof Date &&
-        !isNaN(d.end.getTime())
-      )
-        .attr("x", d => x(d.start))
-        .attr("y", d => yScale(d.rowKey)! + yOff)
-        .attr("width", d => x(d.end) - x(d.start))
-        .attr("height", barH)
-        .attr("fill", d => {
-          const key = d.rowKey.split("|")[1];
-          const dp = this.ganttdataPoints.find(p => p.parent === key);
-          const baseColor = d3.color(dp?.color ?? "#72c0ffff");
-          return baseColor ? d3.interpolateRgb(baseColor, d3.color("#ffffff"))(0.50) : "#cccccc";
-        })
-        .text("text")
-        .attr("rx", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
-        .attr("ry", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
-        .attr("stroke", d => {
-          const key = d.rowKey.split("|")[1];
-          const dp = this.ganttdataPoints.find(p => p.parent === key);
-          return dp?.color ?? "#72c0ffff";
-        })
-        .attr("stroke-width", (barCfg.barGroup.slices.find(s => s.name === "strokeWidth") as formattingSettings.Slider).value);
-      // Barra de avance (completion) sobre la barra base BARRA STD
+  const bars = this.ganttG.selectAll<SVGElement, BarDatum>(".bar")
+    .attr("fill", d => {
+      const dp = this.ganttdataPoints.find(p => p.parent === d.rowKey.split("|")[1]);
+      return dp?.color ?? "#000";
+    })
+    .data(allBars, d => d.id)
+    .join(
+      enter => enter.append(d =>
+        document.createElementNS("http://www.w3.org/2000/svg", d.isGroup ? "path" : "rect")
+      ).attr("class", "bar"),
+      update => update,
+      exit => exit.remove()
+    );
+
+  // === HIJOS (tareas) ===
+  bars.filter(d =>
+    !d.isGroup &&
+    d.start instanceof Date && !isNaN(d.start.getTime()) &&
+    d.end instanceof Date && !isNaN(d.end.getTime())
+  )
+    .attr("x", d => x(d.start))
+    .attr("y", d => yScale(d.rowKey)! + yOff)
+    .attr("width", d => x(d.end) - x(d.start))
+    .attr("height", this.barH)
+    .attr("fill", d => {
+      const key = d.rowKey.split("|")[1];
+      const dp = this.ganttdataPoints.find(p => p.parent === key);
+      const baseColor = d3.color(dp?.color ?? "#72c0ffff");
+      return baseColor ? d3.interpolateRgb(baseColor, d3.color("#ffffff"))(0.50) : "#cccccc";
+    })
+    .attr("rx", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
+    .attr("ry", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
+    .attr("stroke", d => {
+      const key = d.rowKey.split("|")[1];
+      const dp = this.ganttdataPoints.find(p => p.parent === key);
+      return dp?.color ?? "#72c0ffff";
+    })
+    .attr("stroke-width", (barCfg.barGroup.slices.find(s => s.name === "strokeWidth") as formattingSettings.Slider).value)
+    .on("mouseover", (event, d: BarDatum) => {
+      const strokeColor = d3.select(event.currentTarget).attr("stroke");
+      d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
+    })
+    .on("mouseout", (event, d: BarDatum) => {
+      d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", taskFmt.fontColor.value.value);
+    });
+
+  // === PADRES (grupos) ===
+  // === PADRES (grupos) ===
+bars.filter(d =>
+  d.isGroup &&
+  d.start instanceof Date && !isNaN(d.start.getTime()) &&
+  d.end instanceof Date && !isNaN(d.end.getTime())
+)
+  .attr("d", d => this.getGroupBarPath(x, yScale, d, taskFmt.taskHeight.value, this.barH))
+  .attr("fill", d => `url(#${d.gradientId})`)
+  .attr("stroke", d => {
+    const key = d.rowKey.split("|")[0].replace(/^[A-Z]:/, "");
+    const dp = this.ganttdataPoints.find(p => p.parent === key);
+    return dp?.color ?? "#72c0ffff";
+  })
+  .attr("stroke-width", 1)
+  .on("mouseover", (event, d: BarDatum) => {
+    const strokeColor = d3.select(event.currentTarget).attr("stroke");
+    // 🔑 esto pinta SOLO el texto del padre
+    d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
+  })
+  .on("mouseout", (event, d: BarDatum) => {
+    d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", parFmt.fontColor.value.value);
+  });
+
+
       this.ganttG.selectAll<SVGRectElement, BarDatum>(".completion-bar")
         .data(allBars.filter(d =>
           !d.isGroup &&
@@ -987,7 +1124,7 @@ export class Visual implements IVisual {
         .attr("class", "completion-bar")
         .attr("x", d => x(d.start))
         .attr("y", d => yScale(d.rowKey)! + yOff)
-        .attr("height", barH)
+        .attr("height", this.barH)
         .attr("width", d => {
           if (!(d.start instanceof Date) || isNaN(d.start.getTime())) return 0;
           if (!(d.end instanceof Date) || isNaN(d.end.getTime())) return 0;
@@ -1007,7 +1144,66 @@ export class Visual implements IVisual {
         })
         .attr("rx", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
         .attr("ry", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value);
-      // (STD) COMPLETADO
+
+      this.ganttG
+        .selectAll(".bar-secondary")
+        .data(allBars.filter(d =>
+          d.secondaryStart instanceof Date &&
+          !isNaN(d.secondaryStart.getTime()) &&
+          d.secondaryEnd instanceof Date &&
+          !isNaN(d.secondaryEnd.getTime())
+        ))
+        .join("rect")
+        .attr("class", "bar-secondary")
+        .attr("x", d => {
+          const xVal = x(d.secondaryStart!);
+          return xVal;
+        })
+        .attr("y", d => {
+          const yVal = yScale(d.rowKey)! + yOff + this.barH / 2 - (d.isGroup ? 4 : 3);
+          return yVal;
+        })
+        .attr("width", d => {
+          const w = Math.max(0, x(d.secondaryEnd!) - x(d.secondaryStart!));
+          return w;
+        })
+        .attr("height", d => {
+          const h = d.isGroup ? 5 : 6;
+          return h;
+        })
+        .attr("fill", d => {
+          const color = d.isGroup ? "#d35400" : "#e67e22";
+          return color;
+        })
+        .attr("rx", 2);
+
+      const today = new Date();
+      this.ganttG
+        .selectAll(".today-line")
+        .data([today])
+        .join("line")
+        .attr("class", "today-line")
+        .attr("x1", d => x(d))
+        .attr("x2", d => x(d))
+        .attr("y1", 0)
+        .attr("y2", innerH)
+        .attr("stroke", this.fmtSettings.timeMarkerCard.todayGroup.fontColor.value.value)
+        .attr("stroke-width", 2)
+        .attr("stroke-dasharray", "4,2");
+
+      // Texto vertical "Hoy"
+      this.ganttG
+        .selectAll(".today-label")
+        .data([today])
+        .join("text")
+        .attr("class", "today-label")
+        .text("Hoy") // o "Today"
+        .attr("x", d => x(d) + 5) // desplazamiento horizontal para no solaparse con la línea
+        .attr("y", 10)            // posición vertical inicial
+        .attr("font-size", 15)
+        .attr("fill", this.fmtSettings.timeMarkerCard.todayGroup.fontColor.value.value)
+        .attr("writing-mode", "vertical-rl")  // texto vertical
+        .attr("text-anchor", "start");
 
       this.ganttG.selectAll<SVGTextElement, BarDatum>(".completion-label")
         .data(allBars.filter(d =>
@@ -1035,7 +1231,7 @@ export class Visual implements IVisual {
           const pct = c > 1 ? c / 100 : c;
           return start + width * pct - 6;
         })
-        .attr("y", d => yScale(d.rowKey)! + yOff + barH / 2 + 4)
+        .attr("y", d => yScale(d.rowKey)! + yOff + this.barH / 2 + 4)
         .attr("fill", this.fmtSettings.completionCard.fontColor.value.value)
         .attr("font-size", this.fmtSettings.completionCard.fontSize.value)
         .attr("font-family", this.fmtSettings.completionCard.fontFamily.value)
@@ -1050,7 +1246,7 @@ export class Visual implements IVisual {
         d.end instanceof Date &&
         !isNaN(d.end.getTime())
       )
-        .attr("d", d => this.getGroupBarPath(x, yScale, d, taskFmt.taskHeight.value, barH))
+        .attr("d", d => this.getGroupBarPath(x, yScale, d, taskFmt.taskHeight.value, this.barH))
         .attr("fill", d => `url(#${d.gradientId})`)
         .attr("stroke", d => {
           const key = d.rowKey.split("|")[0].replace(/^[A-Z]:/, "");
@@ -1059,14 +1255,13 @@ export class Visual implements IVisual {
         })
         .attr("stroke-width", 1);
 
-
       renderDurationLabels({
         svg: this.ganttG,
         bars: allBars,
         x,
         y: this.y,
         yOffset: yOff,
-        barHeight: barH,
+        barHeight: this.barH,
         fontFamily: this.fmtSettings.barCard.labelGroup.fontFamily.value,
         fontSize: this.fmtSettings.barCard.labelGroup.fontSize.value,
         fontColor: this.fmtSettings.barCard.labelGroup.fontColor.value.value,
@@ -1074,20 +1269,37 @@ export class Visual implements IVisual {
         italic: this.fmtSettings.barCard.labelGroup.italic.value,
         underline: this.fmtSettings.barCard.labelGroup.underline.value
       });
+
       const tooltipValues = dv.categorical.values.filter(val => val.source.roles && val.source.roles['tooltips']);
 
-      this.tooltipServiceWrapper.addTooltip(
+      this.tooltipServiceWrapper.addTooltip<BarDatum>(
         bars,
         (d: BarDatum) => {
-          const tooltipItems = [
-            { displayName: "Parent", value: d.rowKey.split("|")[0].replace(/^G:/, "") },
-            { displayName: "Task", value: d.id },
-            { displayName: "Inicio", value: d.start.toLocaleString() },
-            { displayName: "Fin", value: d.end.toLocaleString() },
-            ...(typeof d.completion === "number"
-              ? [{ displayName: "Completado", value: `${Math.round(d.completion * 100)}%` }]
-              : [])
+
+          let taskName = "";
+          let parentName = "";
+
+          if (d.isGroup) {
+            parentName = (d.rowKey || "").replace(/^G:/, "");
+          } else {
+            const [taskRaw, parentRaw] = (d.rowKey || "").split("|");
+            taskName = (taskRaw || "").replace(/^T:/, "").replace(/^G:/, "");
+            parentName = (parentRaw || "").replace(/^T:/, "").replace(/^G:/, "");
+          }
+
+          const tooltipItems: { displayName: string; value: string }[] = [
+            { displayName: "Parent", value: parentName },
+            ...(taskName ? [{ displayName: "Task", value: taskName }] : []),
+            { displayName: "Inicio P", value: d.start.toLocaleString() },
+            { displayName: "Fin P", value: d.end.toLocaleString() },
           ];
+
+          const c = Number(d.completion);
+          if (Number.isFinite(c) && c !== 0) {
+            const pct = c > 1 ? c : c * 100;
+            tooltipItems.push({ displayName: "Completado", value: `${Math.round(pct)}%` });
+          }
+
           tooltipValues.forEach(val => {
             const v = val.values[d.index];
             tooltipItems.push({
@@ -1095,13 +1307,50 @@ export class Visual implements IVisual {
               value: (v !== undefined && v !== null) ? String(v) : ""
             });
           });
+
           return tooltipItems;
-        }
+        },
+        (d: BarDatum) => d.selectionId
       );
     }
 
+    const depLines: {
+      fromRow: VisualRow;
+      toRow: VisualRow;
+    }[] = [];
 
+    dependencies.forEach(dep => {
+      const fromRow = visibleRows.find(r => r.id === dep.from);
+      const toRow = visibleRows.find(r => r.id === dep.to);
 
+      if (fromRow?.task?.end && toRow?.task?.start) {
+        depLines.push({ fromRow, toRow });
+      } else {
+        console.warn("⚠️ Dependencia inválida:", dep);
+      }
+    });
+
+    this.ganttG.selectAll(".dependency-line")
+      .data(depLines)
+      .join("path")
+      .attr("class", "dependency-line")
+      .attr("d", d => {
+        const x1 = x(d.fromRow.task.end);
+        const y1 = this.y(d.fromRow.rowKey)! + this.y.bandwidth() / 2;
+        const x2 = x(d.toRow.task.start);
+        const y2 = this.y(d.toRow.rowKey)! + this.y.bandwidth() / 2;
+
+        const midX = (x1 + x2) / 2;
+        return `M${x1},${y1} 
+            L${midX},${y1} 
+            L${midX},${y2} 
+            L${x2},${y2}`;
+      })
+      .attr("fill", "none")
+      .attr("stroke", "#afafafff")
+      .attr("stroke-width", 2)
+      .attr("marker-end", "url(#arrowhead)")
+      .lower();
 
     this.axisTopContentG = this.xAxisFixedG
       .append("g")
@@ -1118,13 +1367,10 @@ export class Visual implements IVisual {
       fmtSettings: this.fmtSettings
     });
 
-
-
     this.axisBottomContentG = this.xAxisFixedG
       .append("g")
       .attr("class", "axis-bottom-content")
       .attr("transform", `translate(0, 0)`);
-
 
     renderXAxisBottom({
       xScale: x,
@@ -1135,6 +1381,18 @@ export class Visual implements IVisual {
       translateX: margin.left,
       fmtSettings: this.fmtSettings
     });
+
+    if (preserveView) {
+      if (savedScrollTop !== undefined) {
+        this.ganttDiv.node()!.scrollTop = savedScrollTop;
+        this.ganttDiv.node()!.scrollLeft = savedScrollLeft ?? 0;
+      }
+      if (savedZoom) {
+        this.ganttSVG.call(this.zoomBehavior.transform, savedZoom);
+      }
+    }
+
+    this.host.eventService?.renderingFinished?.(opts.viewport);
   }
 
   private renderLanding(width: number, height: number) {
@@ -1178,26 +1436,33 @@ export class Visual implements IVisual {
     const eVal = cat.values.find(v => v.source.roles?.endDate)?.values;
     const durVal = cat.values.find(v => v.source.roles?.duration)?.values;
     const compVal = cat.values.find(v => v.source.roles?.completion)?.values;
+    const secStartVal = cat.values.find(v => v.source.roles?.secondaryStart)?.values;
+    const secEndVal = cat.values.find(v => v.source.roles?.secondaryEnd)?.values;
 
     const taskCols: { name: string; values: any[] }[] = [];
     const parentCols: { values: any[] }[] = [];
+
+    let predCol: any[] | undefined;
 
     cat.categories.forEach(c => {
       const r = c.source.roles;
       if (r?.task) taskCols.push({ name: c.source.displayName, values: c.values });
       if (r?.parent) parentCols.push({ values: c.values });
+      if (r?.predecessor) predCol = c.values;
     });
 
     this.taskColCount = taskCols.length;
     this.taskColNames = taskCols.map(c => c.name);
 
     const out: Task[] = [];
-    for (let i = 0; i < sVal.length; i++) {
+    const rowCount = sVal?.length ?? 0;
+
+    for (let i = 0; i < rowCount; i++) {
       const taskFields = taskCols.map(c => String(c.values[i] ?? ""));
       const parentTxt = parentCols.map(c => String(c.values[i] ?? "")).join(" | ") || "Sin grupo";
 
-      const rawStart = sVal[i];
-      const rawEnd = eVal[i];
+      const rawStart = sVal?.[i];
+      const rawEnd = eVal?.[i];
 
       const start = rawStart ? new Date(rawStart as string) : null;
       const end = rawEnd ? new Date(rawEnd as string) : null;
@@ -1205,18 +1470,39 @@ export class Visual implements IVisual {
       const isStartValid = start instanceof Date && !isNaN(start.getTime());
       const isEndValid = end instanceof Date && !isNaN(end.getTime());
 
-      // Se permite que falte start o end, pero se manejan con 
       const duration = durVal ? Number(durVal[i]) : undefined;
       const fieldsWithDuration = durVal ? [...taskFields, duration?.toString() ?? ""] : taskFields;
 
-      out.push({
+      let predecessor: string | undefined;
+      if (predCol) {
+        const rawPred = String(predCol[i] ?? "").trim();
+        if (rawPred !== "") predecessor = rawPred;
+      }
+
+      const secStart =
+        typeof secStartVal?.[i] === "string" || typeof secStartVal?.[i] === "number"
+          ? new Date(secStartVal[i] as string | number)
+          : undefined;
+
+      const secEnd =
+        typeof secEndVal?.[i] === "string" || typeof secEndVal?.[i] === "number"
+          ? new Date(secEndVal[i] as string | number)
+          : undefined;
+
+      const task: Task = {
         id: taskFields.join(" | "),
         parent: parentTxt,
         start: isStartValid ? start! : null,
         end: isEndValid ? end! : null,
         fields: fieldsWithDuration,
-        completion: compVal ? Number(compVal[i]) : undefined
-      });
+        completion: compVal ? Number(compVal[i]) : undefined,
+        secondaryStart: secStart,
+        secondaryEnd: secEnd,
+        predecessor,
+        index: i  // <<--- agregado
+      };
+
+      out.push(task);
     }
 
     return out;
@@ -1230,7 +1516,9 @@ export class Visual implements IVisual {
     for (const [parent, list] of grouped.entries()) {
       this.groupRange.set(parent!, {
         start: d3.min(list, d => d.start)!,
-        end: d3.max(list, d => d.end)!
+        end: d3.max(list, d => d.end)!,
+        secondaryStart: d3.min(list, d => d.secondaryStart),
+        secondaryEnd: d3.max(list, d => d.secondaryEnd)
       });
       const groupDuration = list.reduce((sum, t) => {
         const dur = Number(t.fields[t.fields.length - 1]);
@@ -1335,7 +1623,6 @@ export class Visual implements IVisual {
         return Math.max(0, newX(d.end) - newX(d.start));
       });
 
-
     this.ganttG.selectAll<SVGRectElement, BarDatum>(".completion-bar")
       .attr("x", d => newX(d.start))
       .attr("width", d => {
@@ -1347,7 +1634,15 @@ export class Visual implements IVisual {
         return baseWidth * (c > 1 ? c / 100 : c);
       });
     this.ganttG.selectAll<SVGTextElement, BarDatum>(".duration-label")
-      .attr("x", d => newX(d.end) + 4);
+      .attr("x", d => {
+        const end = d.end instanceof Date ? d.end : null;
+        const secEnd = d.secondaryEnd instanceof Date ? d.secondaryEnd : null;
+
+        const baseDate = (end && secEnd && secEnd > end) ? secEnd : end;
+
+        return baseDate ? newX(baseDate) + 4 : -9999;
+      });
+
     this.ganttG.selectAll<SVGTextElement, BarDatum>(".completion-label")
       .attr("x", d => {
         const c = Number(d.completion);
@@ -1386,7 +1681,6 @@ export class Visual implements IVisual {
       .attr("x1", d => newX(d))
       .attr("x2", d => newX(d));
 
-    // Actualizar posición de fondo si es formato Día o Todo
     if (this.axisBottomContentG?.select("rect.x-label-bg").size()) {
       this.axisBottomContentG.selectAll<SVGRectElement, Date>("rect.x-label-bg")
         .attr("x", d => {
@@ -1427,15 +1721,117 @@ export class Visual implements IVisual {
       .attr("x1", d => newX(d))
       .attr("x2", d => newX(d));
 
+    // Redibujar dependencias al zoom
+    this.ganttG.selectAll<SVGPathElement, any>(".dependency-line")
+      .attr("d", d => {
+        const x1 = newX(d.fromRow.task.end);
+        const y1 = y(d.fromRow.rowKey)! + y.bandwidth() / 2;
+        const x2 = newX(d.toRow.task.start);
+        const y2 = y(d.toRow.rowKey)! + y.bandwidth() / 2;
+
+        const midX = (x1 + x2) / 2;
+
+        return `M${x1},${y1} 
+            L${midX},${y1} 
+            L${midX},${y2} 
+            L${x2},${y2}`;
+      });
+
+    this.ganttG
+      .selectAll<SVGRectElement, BarDatum>(".bar-secondary")
+      .filter(d => d.secondaryStart instanceof Date && d.secondaryEnd instanceof Date)
+      .attr("x", d => newX(d.secondaryStart!))
+      .attr("width", d => {
+        const x1 = newX(d.secondaryStart!);
+        const x2 = newX(d.secondaryEnd!);
+        return Math.max(0, x2 - x1);
+      });
+
+    const today = new Date();
+    this.ganttG
+      .selectAll<SVGLineElement, Date>(".today-line")
+      .attr("x1", d => newX(d))
+      .attr("x2", d => newX(d));
+
+    this.ganttG
+      .selectAll<SVGTextElement, Date>(".today-label")
+      .attr("x", d => newX(d) + 10);
+
   }
 
-  private updateSelectedFormatFromZoom(diffInDays: number): FormatType {
-    if (diffInDays < 10) return 'Hora';
-    if (diffInDays < 110) return 'Día';
-    if (diffInDays < 749) return 'Mes';
-    if (diffInDays >= 750) return 'Año';
-    return 'Año'; // Comodín por si algo falla
+  private updateSelectedFormatFromZoom(t: d3.ZoomTransform, width: number): FormatType {
+    const [start, end] = this.xOriginal.domain();
+    const baseDays = (end.getTime() - start.getTime()) / (1000 * 3600 * 24);
+
+    // pixeles por día = ancho visible / días visibles
+    const visibleDays = baseDays / t.k;
+    const pxPerDay = width / visibleDays;
+
+    if (pxPerDay > 125) return "Hora";
+    if (pxPerDay > 17) return "Día";
+    if (pxPerDay > 2) return "Mes";
+    return "Año";
   }
 
+  private getDateRangeFromFormat(fmt: FormatType): [Date, Date] {
+    const [minDate, maxDate] = this.xOriginal.domain();
+    switch (fmt) {
+      case "Hora":
+        // Mostrar solo la primera jornada
+        return [minDate, d3.timeDay.offset(minDate, 1)];
+      case "Día":
+        // Mostrar un mes desde minDate
+        return [minDate, d3.timeMonth.offset(minDate, 1)];
+      case "Mes":
+        // Mostrar un año desde minDate
+        return [minDate, d3.timeYear.offset(minDate, 1)];
+      case "Año":
+      default:
+        // Todo el rango
+        return [minDate, maxDate];
+    }
+  }
+
+  private zoomToRange(start: Date, end: Date) {
+    const visibleW = this.width - this.marginLeft;
+    const rangeWidth = this.xOriginal(end) - this.xOriginal(start);
+    const scale = visibleW / rangeWidth;
+
+    const firstTask = this.cacheTasks.find(t => t.start && t.end);
+    if (!firstTask) return;
+
+    const barStart = this.xOriginal(firstTask.start!);
+
+    // 👇 alinear inicio de la primera barra con el borde izquierdo del área de barras
+    const translateX = (this.marginLeft - this.marginLeft) - barStart * scale + 10;
+
+    const t = d3.zoomIdentity
+      .translate(translateX, 0)
+      .scale(scale);
+
+    console.log("=== zoomToRange alineado ===");
+    console.log("marginLeft:", this.marginLeft);
+    console.log("barStart:", barStart);
+    console.log("scale:", scale);
+    console.log("translateX:", translateX);
+
+    this.ganttSVG.call(this.zoomBehavior.transform, t);
+  }
+
+
+
+
+
+
+
+
+
+
+
+  private updateFormatButtonsUI(fmt: FormatType) {
+    // solo marcar cuál está activo
+    const buttons = this.rightBtns.selectAll("button");
+    buttons.classed("active", d => d === fmt);
+  }
 
 }

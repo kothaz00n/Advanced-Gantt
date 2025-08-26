@@ -12,6 +12,9 @@ export interface BarDatum {
     isGroup: boolean;
     index: number;
     completion?: number;
+    secondaryStart?: Date;
+    secondaryEnd?: Date;
+    selectionId: ISelectionID;
 }
 export interface GanttDataPoint {
     task: string;
@@ -22,6 +25,8 @@ export interface GanttDataPoint {
     selectionId: ISelectionID;
     index: number;
     completion?: number;
+    secondaryStart?: Date;
+    secondaryEnd?: Date;
 }
 export declare class Visual implements IVisual {
     private container;
@@ -55,14 +60,24 @@ export declare class Visual implements IVisual {
     private ganttdataPoints;
     private currentZoomTransform?;
     private y;
+    private marginLeft;
+    private width;
+    private innerW;
+    private xOriginal;
+    private barH;
+    private zoomBehavior;
+    private computeInnerW;
     private getGroupBarPath;
     private getCompletionByGroup;
     constructor(opts: VisualConstructorOptions);
-    update(opts: VisualUpdateOptions): void;
+    update(opts: VisualUpdateOptions, preserveView?: boolean): void;
     private renderLanding;
     getFormattingModel(): powerbi.visuals.FormattingModel;
     private parseData;
     private buildRows;
     private redrawZoomedElements;
     private updateSelectedFormatFromZoom;
+    private getDateRangeFromFormat;
+    private zoomToRange;
+    private updateFormatButtonsUI;
 }

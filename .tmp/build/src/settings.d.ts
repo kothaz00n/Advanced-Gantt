@@ -46,11 +46,30 @@ declare class BarLabelStyleGroup extends SimpleCard {
 declare class BarStyleGroup extends FormattingSettingsGroup {
     constructor();
 }
+declare class TodayMarkerStyleGroup extends SimpleCard {
+    name: string;
+    displayName: string;
+    fontFamily: FontPicker;
+    fontSize: NumUpDown;
+    bold: ToggleSwitch;
+    italic: ToggleSwitch;
+    underline: ToggleSwitch;
+    fontColor: ColorPicker;
+    font: FontControl;
+    markColor: formattingSettings.ColorPicker;
+    slices: formattingSettings.Slice[];
+}
 declare class BarCardSettings extends CompositeCard {
     name: string;
     displayName: string;
     labelGroup: BarLabelStyleGroup;
     barGroup: BarStyleGroup;
+    groups: formattingSettings.Group[];
+}
+declare class TimeMarkerCardSettings extends CompositeCard {
+    name: string;
+    displayName: string;
+    todayGroup: TodayMarkerStyleGroup;
     groups: formattingSettings.Group[];
 }
 declare class HeaderCardSettings extends SimpleCard {
@@ -128,6 +147,7 @@ export declare class VisualFormattingSettingsModel extends Model {
     colorSelector: ColorSelectorCardSettings;
     weekendCard: WeekendCardSettings;
     completionCard: completionCardSettings;
+    timeMarkerCard: TimeMarkerCardSettings;
     cards: Card[];
     populateColorSelector(dataPoints: GanttDataPoint[]): void;
 }

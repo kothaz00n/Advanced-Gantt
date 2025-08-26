@@ -204,6 +204,69 @@ class BarStyleGroup extends FormattingSettingsGroup {
     }
 }
 
+
+// TODAY MARKER GROUP
+
+class TodayMarkerStyleGroup extends SimpleCard {
+    name: string = "todayMarkerGroup";
+    displayName: string = "Today Marker";
+
+    public fontFamily: FontPicker = new FontPicker({
+        name: "fontFamily",
+        value: "Arial, sans-serif"
+    });
+
+    public fontSize: NumUpDown = new NumUpDown({
+        name: "fontSize",
+        value: 15
+    });
+
+    public bold: ToggleSwitch = new ToggleSwitch({
+        name: "bold",
+        value: false
+    });
+
+    public italic: ToggleSwitch = new ToggleSwitch({
+        name: "italic",
+        value: false
+    });
+
+    public underline: ToggleSwitch = new ToggleSwitch({
+        name: "underline",
+        value: false
+    });
+
+    public fontColor: ColorPicker = new ColorPicker({
+        name: "fontColor",
+        value: { value: "#ff2929ff" },
+        displayName: "Color de fuente"
+    });
+
+
+
+    public font: FontControl = new FontControl({
+        name: "font",
+        displayName: "Fuente",
+        fontFamily: this.fontFamily,
+        fontSize: this.fontSize,
+        bold: this.bold,
+        italic: this.italic,
+        underline: this.underline
+    });
+
+    public markColor = new ColorPicker({
+        name: "barColor",
+        displayName: "Color de marcador",
+        value: { value: "#ff2929ff" }
+    });
+
+    public slices: formattingSettings.Slice[] = [this.font, this.markColor];
+}
+
+
+
+/* Grupos compuestos */ 
+
 class BarCardSettings extends CompositeCard {
     name = "barCard";
     displayName = "Barras";
@@ -212,6 +275,15 @@ class BarCardSettings extends CompositeCard {
     barGroup = new BarStyleGroup();
 
     groups: formattingSettings.Group[] = [this.labelGroup, this.barGroup];
+}
+
+class TimeMarkerCardSettings extends CompositeCard {
+    name = "timeMarkerCard";
+    displayName = "Time Marker";
+
+    todayGroup = new TodayMarkerStyleGroup();
+
+    groups: formattingSettings.Group[] = [this.todayGroup];
 }
 
 /* ────────────────────────────────
@@ -484,6 +556,7 @@ export class VisualFormattingSettingsModel extends Model {
     colorSelector = new ColorSelectorCardSettings();
     weekendCard = new WeekendCardSettings();
     completionCard = new completionCardSettings();
+    timeMarkerCard = new TimeMarkerCardSettings();
 
     cards: Card[] = [
         this.axisXCard,
@@ -495,7 +568,8 @@ export class VisualFormattingSettingsModel extends Model {
         this.adminCard,
         this.colorSelector,
         this.weekendCard,
-        this.completionCard
+        this.completionCard,
+        this.timeMarkerCard
     ];
 
     populateColorSelector(dataPoints: GanttDataPoint[]) {
