@@ -88,6 +88,8 @@ declare class TaskCardSetting extends SimpleCard {
     taskWidth: formattingSettings.NumUpDown;
     startWidth: formattingSettings.NumUpDown;
     endWidth: formattingSettings.NumUpDown;
+    secStartWidth: formattingSettings.NumUpDown;
+    secEndWidth: formattingSettings.NumUpDown;
     fontColor: formattingSettings.ColorPicker;
     fontSize: formattingSettings.NumUpDown;
     fontFamily: formattingSettings.FontPicker;

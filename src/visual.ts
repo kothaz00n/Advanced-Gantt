@@ -204,6 +204,8 @@ export class Visual implements IVisual {
   private xOriginal: d3.ScaleTime<number, number>;
   private barH: number = 40;
   private zoomBehavior!: d3.ZoomBehavior<SVGSVGElement, unknown>;
+  private baseDomain?: [Date, Date];
+
 
 
 
@@ -332,11 +334,16 @@ export class Visual implements IVisual {
       onFormatChange: (fmt: string) => {
         const [newMin, newMax] = this.getDateRangeFromFormat(fmt as FormatType);
 
-        // 2. aplicar el rango al zoom → esto mueve la cámara
+        // mover la cámara al rango elegido
         this.zoomToRange(newMin, newMax);
 
-        // ⚠️ importante: acá NO tocamos this.selectedFormat
-        // lo decide updateSelectedFormatFromZoom()
+        // 🔹 forzar limpieza/redibujado inmediato
+        if (this.currentZoomTransform) {
+          const newX = this.currentZoomTransform.rescaleX(this.xOriginal);
+          this.selectedFormat = fmt as FormatType; // set explícito
+          this.redrawZoomedElements(newX, this.y, this.barH);
+          this.updateFormatButtonsUI(this.selectedFormat);
+        }
       }
     });
 
@@ -395,16 +402,17 @@ export class Visual implements IVisual {
 
     this.xAxisFixedG = this.xAxisFixedSVG.append("g");
 
-    this.ganttDiv.on("scroll", () => {
-      const scrollNode = this.ganttDiv.node()!;
-      const scrollLeft = scrollNode.scrollLeft;
-      const scrollTop = scrollNode.scrollTop;
-      this.xAxisFixedG.attr("transform", `translate(${-scrollLeft},0)`);
-      this.leftG.select<SVGGElement>(".y-content")
-        .attr("transform", `translate(0, ${60 - scrollTop})`);
-      event.preventDefault(); // previene el scroll nativo
+    this.ganttDiv.node()!.addEventListener("scroll", () => {
+      const node = this.ganttDiv.node()!;
+      const left = node.scrollLeft;
+      const top = node.scrollTop;
 
-    });
+      requestAnimationFrame(() => {
+        this.xAxisFixedG.attr("transform", `translate(${-left},0)`);
+        this.leftG.select<SVGGElement>(".y-content")
+          .attr("transform", `translate(0, ${60 - top})`);
+      });
+    }, { passive: true }); // 👈 importante
 
     this.leftG = this.yAxisSVG.append("g");
     this.ganttG = this.ganttSVG.append("g");
@@ -415,6 +423,58 @@ export class Visual implements IVisual {
   }
 
   public update(opts: VisualUpdateOptions, preserveView = false): void {
+    const isDataUpdate = (opts.type & powerbi.VisualUpdateType.Data) !== 0;
+    if (isDataUpdate) {
+      preserveView = true;
+
+      if (this.currentZoomTransform) {
+        const oldDomain = this.xOriginal?.domain();
+        const dataDomain: [Date, Date] = this.baseDomain!;
+
+        if (oldDomain && dataDomain[0] && dataDomain[1]) {
+          const oldSpan = oldDomain[1].getTime() - oldDomain[0].getTime();
+          const newSpan = dataDomain[1].getTime() - dataDomain[0].getTime();
+
+          if (oldSpan > 0 && newSpan > 0) {
+            const t = this.currentZoomTransform;
+            const testX = t.rescaleX(this.xOriginal);
+            const [testMin, testMax] = testX.domain();
+
+            // ✅ usar dataDomain para consistencia
+            if (testMax < this.baseDomain![0] || testMin > this.baseDomain![1]) {
+              console.warn("⚠️ Transform fuera de dominio, reseteando zoom");
+              this.currentZoomTransform = null;
+              if (this.ganttSVG && this.zoomBehavior) {
+                this.ganttSVG.call(this.zoomBehavior.transform, d3.zoomIdentity);
+              }
+            } else {
+              // dentro del rango → verificar consistencia
+              const overlap = Math.min(testMax.getTime(), dataDomain[1].getTime()) -
+                Math.max(testMin.getTime(), dataDomain[0].getTime());
+              const visibleSpan = testMax.getTime() - testMin.getTime();
+
+              if (visibleSpan <= 0 || overlap / visibleSpan < 0.2) {
+                console.warn("⚠️ Transform inconsistente, recalibrando");
+                this.currentZoomTransform = null;
+                if (this.ganttSVG && this.zoomBehavior) {
+                  this.ganttSVG.call(this.zoomBehavior.transform, d3.zoomIdentity);
+                }
+              } else {
+                this.currentZoomTransform = t;
+              }
+            }
+          } else {
+            // spans inválidos → resetear
+            this.currentZoomTransform = null;
+            if (this.ganttSVG && this.zoomBehavior) {
+              this.ganttSVG.call(this.zoomBehavior.transform, d3.zoomIdentity);
+            }
+          }
+        }
+      }
+
+    }
+
     let savedScrollTop: number | undefined;
     let savedScrollLeft: number | undefined;
     let savedZoom: d3.ZoomTransform | undefined;
@@ -427,8 +487,8 @@ export class Visual implements IVisual {
       }
     }
 
-
     this.host.eventService?.renderingStarted?.(opts.viewport);
+
 
     this.fmtSettings = this.fmtService.populateFormattingSettingsModel(VisualFormattingSettingsModel, opts.dataViews?.[0]);
     this.ganttdataPoints = createSelectorDataPoints(opts, this.host)
@@ -449,18 +509,31 @@ export class Visual implements IVisual {
 
     const colWidths: number[] = [];
 
+    // Columna de la tarea
     colWidths.push(this.fmtSettings.taskCard.taskWidth.value); // Tarea
-    colWidths.push(this.fmtSettings.taskCard.startWidth.value); // Inicio
 
+    // Columna Inicio P
+    colWidths.push(this.fmtSettings.taskCard.startWidth.value); // Inicio P
+
+    // Si tenés columnas extra (campos de la tarea)
     for (let i = 0; i < this.taskColCount - 2; i++) {
-      colWidths.push(180); // podés personalizar más si querés
+      colWidths.push(180); // personalizable
     }
 
-    colWidths.push(this.fmtSettings.taskCard.endWidth.value); // Fin
+    // Columna Fin P
+    colWidths.push(this.fmtSettings.taskCard.endWidth.value); // Fin P
 
+    // 🔹 Nueva columna Inicio R
+    colWidths.push(this.fmtSettings.taskCard.startWidth.value); // Inicio R
+
+    // 🔹 Nueva columna Fin R
+    colWidths.push(this.fmtSettings.taskCard.endWidth.value);   // Fin R
+
+    // Duración (si existe)
     if (hasD) {
       colWidths.push(100); // Duración
     }
+
 
 
     this.width = opts.viewport.width;
@@ -510,34 +583,51 @@ export class Visual implements IVisual {
     const rowH = this.fmtSettings.taskCard.taskHeight.value;
     const innerH = rowH * visibleRows.length;
 
-    let xStart = d3.min(this.cacheTasks, d => d.start)!;
-    let xEnd = d3.max(this.cacheTasks, d => d.end)!;
-    if (xStart >= xEnd) xEnd = new Date(xStart.getTime() + 3_600_000);
-
-    // 1) Calcular ancho lógico ANTES de crear las escalas
-    this.innerW = this.computeInnerW(this.selectedFormat, xStart, xEnd, width, margin);
-
-    // 2) Crear escalas usando el range correcto
+    // ✅ Por esto
+    // calcular ancho interno en base al dominio actual
+    this.innerW = this.computeInnerW(
+      this.selectedFormat,
+      d3.min(this.cacheTasks, d => d.start)!,
+      d3.max(this.cacheTasks, d => d.end)!,
+      width,
+      margin
+    );
     let x: d3.ScaleTime<number, number>;
 
-    if (this.currentZoomTransform) {
-      this.xOriginal = d3.scaleTime()
-        .domain([xStart, xEnd])
-        .range([0, this.innerW]);
-      x = this.currentZoomTransform.rescaleX(this.xOriginal);
-    } else {
-      this.xOriginal = d3.scaleTime()
-        .domain([xStart, xEnd])
-        .range([0, this.innerW]);
-      x = this.xOriginal.copy();
+    // dominio base fijo, solo se calcula una vez
+    if (!this.baseDomain) {
+      const minDate = d3.min(this.cacheTasks, d => d.start)!;
+      const maxDate = d3.max(this.cacheTasks, d => d.end)!;
+      const buffer = 365; // margen opcional
+
+      this.baseDomain = [
+        d3.timeDay.offset(minDate, -buffer),
+        d3.timeDay.offset(maxDate, buffer)
+      ];
     }
 
+    // escala original siempre basada en baseDomain
+    if (!this.xOriginal) {
+      this.xOriginal = d3.scaleTime()
+        .domain(this.baseDomain)
+        .range([0, this.innerW]);
+    } else {
+      this.xOriginal.range([0, this.innerW]); // 👈 nunca tocar el dominio
+    }
 
+    // aplicar zoom actual si existe
+    x = this.currentZoomTransform
+      ? this.currentZoomTransform.rescaleX(this.xOriginal)
+      : this.xOriginal.copy();
+
+
+    // yScale
     this.y = d3.scaleBand()
       .domain(visibleRows.map(r => r.rowKey))
       .range([0, innerH])
       .paddingInner(0)
       .paddingOuter(0);
+
 
 
     this.yAxisSVG
@@ -562,12 +652,9 @@ export class Visual implements IVisual {
       .attr("transform", `translate(0, ${margin.top})`);
     const gridYPos = visibleRows.map(r => this.y(r.rowKey)!);
 
-    // 1) Extender dominio base para evitar pared invisible en zoom
-    const [origMin, origMax] = this.xOriginal.domain();
-    const bufferDias = 365; // margen: 1 año extra a cada lado
-    const minDateExt = d3.timeDay.offset(origMin, -bufferDias);
-    const maxDateExt = d3.timeDay.offset(origMax, bufferDias);
-    this.xOriginal.domain([minDateExt, maxDateExt]);
+    // ✅ nunca más extiendas acá
+    // el dominio base ya está en this.baseDomain
+    this.xOriginal.domain(this.baseDomain!);
 
     // 2) Variables para drag vertical/horizontal
     let isDragging = false;
@@ -589,6 +676,7 @@ export class Visual implements IVisual {
         this.currentZoomTransform = t;
 
         this.redrawZoomedElements(newX, this.y, this.barH);
+
         const newFormat = this.updateSelectedFormatFromZoom(t, width);
         if (newFormat !== this.selectedFormat) {
           this.selectedFormat = newFormat;
@@ -616,6 +704,7 @@ export class Visual implements IVisual {
         });
       });
 
+
     this.ganttSVG
       .call(this.zoomBehavior)
       .on("mousedown.zoom", null)
@@ -626,9 +715,34 @@ export class Visual implements IVisual {
       .on("dblclick", () => {
         const [minDate, maxDate] = this.xOriginal.domain();
 
-        // al hacer doble clic, centramos todo el rango en la vista
-        this.zoomToRange(minDate, maxDate);
+        // calcular transform destino con zoomToRange pero sin aplicarlo directo
+        const visibleW = this.width - this.marginLeft;
+        const rangeWidth = this.xOriginal(maxDate) - this.xOriginal(minDate);
+        const scale = visibleW / rangeWidth;
+
+        const barStart = this.xOriginal(minDate); // todo el rango arranca en minDate
+        const translateX = (this.marginLeft - this.marginLeft) - barStart * scale + 10;
+
+        const targetTransform = d3.zoomIdentity
+          .translate(translateX, 0)
+          .scale(scale);
+
+        // animación suave al transform destino
+        this.ganttSVG.transition()
+          .duration(500) // ⏱ 0.75 segundos (ajustable)
+          .call(this.zoomBehavior.transform, targetTransform);
+        this.selectedFormat = "Año";
+        this.updateFormatButtonsUI(this.selectedFormat);
+        this.ganttSVG.transition()
+          .delay(750)
+          .on("end", () => {
+            if (this.currentZoomTransform) {
+              const newX = this.currentZoomTransform.rescaleX(this.xOriginal);
+              this.redrawZoomedElements(newX, this.y, this.barH);
+            }
+          });
       });
+
 
     let rafPending = false;
     this.ganttDiv
@@ -682,6 +796,7 @@ export class Visual implements IVisual {
       const head = this.leftG.append("g")
         .attr("class", "header")
         .attr("transform", `translate(0, ${margin.top})`);
+
       head.append("rect")
         .attr("x", 0)
         .attr("y", -90)
@@ -689,6 +804,7 @@ export class Visual implements IVisual {
         .attr("height", 90)
         .attr("zindex", 999)
         .attr("fill", this.fmtSettings.headerCard.backgroundColor.value.value);
+
       head.append("line")
         .attr("x1", 0)
         .attr("x2", margin.left)
@@ -697,6 +813,7 @@ export class Visual implements IVisual {
         .attr("stroke", this.fmtSettings.axisYCard.lineColor.value.value)
         .attr("stroke-width", this.fmtSettings.axisYCard.widthLine.value);
 
+      // nombres dinámicos de columnas de tarea
       this.taskColNames.forEach((n, i) =>
         head.append("text").text(n)
           .attr("x", colX(i))
@@ -706,6 +823,8 @@ export class Visual implements IVisual {
           .attr("font-size", headFmt.fontSize.value)
           .attr("font-family", headFmt.fontFamily.value)
       );
+
+      // columnas fijas
       head.append("text").text("Inicio P")
         .attr("x", colX(this.taskColCount))
         .attr("y", -10)
@@ -713,6 +832,7 @@ export class Visual implements IVisual {
         .attr("fill", headFmt.fontColor.value.value)
         .attr("font-size", headFmt.fontSize.value)
         .attr("font-family", headFmt.fontFamily.value);
+
       head.append("text").text("Fin P")
         .attr("x", colX(this.taskColCount + 1))
         .attr("y", -10)
@@ -720,9 +840,28 @@ export class Visual implements IVisual {
         .attr("fill", headFmt.fontColor.value.value)
         .attr("font-size", headFmt.fontSize.value)
         .attr("font-family", headFmt.fontFamily.value);
+
+      // 🔹 nuevas columnas
+      head.append("text").text("Inicio R")
+        .attr("x", colX(this.taskColCount + 2))
+        .attr("y", -10)
+        .attr("zindex", 999)
+        .attr("fill", headFmt.fontColor.value.value)
+        .attr("font-size", headFmt.fontSize.value)
+        .attr("font-family", headFmt.fontFamily.value);
+
+      head.append("text").text("Fin R")
+        .attr("x", colX(this.taskColCount + 3))
+        .attr("y", -10)
+        .attr("zindex", 999)
+        .attr("fill", headFmt.fontColor.value.value)
+        .attr("font-size", headFmt.fontSize.value)
+        .attr("font-family", headFmt.fontFamily.value);
+
       if (hasD) {
         head.append("text").text("Duración")
-          .attr("x", colX(this.taskColCount + 2))
+          // 👇 se corre dos posiciones más, ahora +4
+          .attr("x", colX(this.taskColCount + 4))
           .attr("y", -10)
           .attr("zindex", 999)
           .attr("fill", headFmt.fontColor.value.value)
@@ -730,6 +869,8 @@ export class Visual implements IVisual {
           .attr("font-family", headFmt.fontFamily.value);
       }
     }
+
+
     const dateFmt = d3.timeFormat("%d/%m/%Y %H:%M:%S");
     const self = this;
 
@@ -755,7 +896,7 @@ export class Visual implements IVisual {
 
           let key: string | undefined;
           if (row.rowKey?.startsWith("G:")) key = row.rowKey.slice(2);
-          else if (row.rowKey?.includes("|")) key = row.rowKey.split("|")[1]; // por si acaso
+          else if (row.rowKey?.includes("|")) key = row.rowKey.split("|")[1];
 
           const dp = self.ganttdataPoints.find(p => p.parent === key);
           const triColor = dp?.color ?? parFmt.fontColor.value.value;
@@ -767,7 +908,7 @@ export class Visual implements IVisual {
             .attr("cursor", "pointer")
             .attr("font-family", parFmt.fontFamily.value)
             .attr("font-size", parFmt.fontSize.value)
-            .attr("data-rowKey", row.rowKey)   // 👈 agregar esto
+            .attr("data-rowKey", row.rowKey)
             .on("click", () => {
               self.expanded.set(row.id, !exp);
               const expandedValues = Array.from(self.expanded.values());
@@ -797,6 +938,28 @@ export class Visual implements IVisual {
               .attr("fill", parFmt.fontColor.value.value)
               .attr("font-size", parFmt.fontSize.value)
               .attr("font-family", parFmt.fontFamily.value);
+
+            // 🔹 nuevos
+            if (r.secondaryStart) {
+              g.append("text").text(dateFmt(r.secondaryStart))
+                .attr("x", colX(self.taskColCount + 2))
+                .attr("y", top + yScale.bandwidth() / 2 + 4)
+                .attr("font-weight", "bold")
+                .attr("fill", parFmt.fontColor.value.value)
+                .attr("font-size", parFmt.fontSize.value)
+                .attr("font-family", parFmt.fontFamily.value);
+            }
+
+            if (r.secondaryEnd) {
+              g.append("text").text(dateFmt(r.secondaryEnd))
+                .attr("x", colX(self.taskColCount + 3))
+                .attr("y", top + yScale.bandwidth() / 2 + 4)
+                .attr("font-weight", "bold")
+                .attr("fill", parFmt.fontColor.value.value)
+                .attr("font-size", parFmt.fontSize.value)
+                .attr("font-family", parFmt.fontFamily.value);
+            }
+
           }
 
           if (row.duration !== undefined && hasD) {
@@ -816,14 +979,35 @@ export class Visual implements IVisual {
 
           row.task.fields.forEach((val, i) => {
             if (hasDuration && i === durationIndex) return;
-            g.append("text").text(val)
+
+            const maxWidth = colWidths[i] - 8;
+            let displayVal = val;
+
+            const tmp = g.append("text")
               .attr("x", colX(i))
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-size", taskFmt.fontSize.value)
               .attr("fill", taskFmt.fontColor.value.value)
               .attr("font-family", taskFmt.fontFamily.value)
-              .attr("data-rowKey", row.rowKey);   // 👈 identificador para hover
+              .attr("data-rowKey", row.rowKey)
+              .text(displayVal);
+
+            // medir ancho real
+            let textNode = tmp.node() as SVGTextElement;
+            if (textNode.getComputedTextLength() > maxWidth) {
+              let str = val;
+              while (str.length && textNode.getComputedTextLength() > maxWidth) {
+                str = str.slice(0, -1);
+                tmp.text(str + "…");
+                textNode = tmp.node() as SVGTextElement;
+              }
+            }
+
+            // 👇 siempre agregar el tooltip con el valor completo
+            tmp.append("title").text(val);
           });
+
+
 
           g.append("text")
             .text(row.task.start && !isNaN(row.task.start.getTime())
@@ -834,7 +1018,8 @@ export class Visual implements IVisual {
             .attr("font-size", taskFmt.fontSize.value)
             .attr("fill", taskFmt.fontColor.value.value)
             .attr("font-family", taskFmt.fontFamily.value)
-            .attr("data-rowKey", row.rowKey);     // 👈 también acá
+            .attr("data-rowKey", row.rowKey)     // 👈 también acá
+            .append("title")               // 👈 tooltip nativo SVG
 
           g.append("text")
             .text(row.task.end && !isNaN(row.task.end.getTime())
@@ -846,6 +1031,29 @@ export class Visual implements IVisual {
             .attr("fill", taskFmt.fontColor.value.value)
             .attr("font-family", taskFmt.fontFamily.value)
             .attr("data-rowKey", row.rowKey);     // 👈 también acá
+
+          g.append("text")
+            .text(row.task.secondaryStart && !isNaN(row.task.secondaryStart.getTime())
+              ? dateFmt(row.task.secondaryStart)
+              : " ")
+            .attr("x", colX(self.taskColCount + 2))   // Inicio R
+            .attr("y", top + yScale.bandwidth() / 2 + 4)
+            .attr("font-size", taskFmt.fontSize.value)
+            .attr("fill", taskFmt.fontColor.value.value)
+            .attr("font-family", taskFmt.fontFamily.value)
+            .attr("data-rowKey", row.rowKey);  // 👈 agregar esto
+
+          g.append("text")
+            .text(row.task.secondaryEnd && !isNaN(row.task.secondaryEnd.getTime())
+              ? dateFmt(row.task.secondaryEnd)
+              : " ")
+            .attr("x", colX(self.taskColCount + 3))   // Fin R
+            .attr("y", top + yScale.bandwidth() / 2 + 4)
+            .attr("font-size", taskFmt.fontSize.value)
+            .attr("fill", taskFmt.fontColor.value.value)
+            .attr("font-family", taskFmt.fontFamily.value)
+            .attr("data-rowKey", row.rowKey);
+
 
           if (hasDuration) {
             const durationVal = row.task.fields[durationIndex];
@@ -1266,45 +1474,45 @@ export class Visual implements IVisual {
 
       const tooltipTargets = this.ganttG.selectAll<SVGRectElement, BarDatum>(".bar, .bar-secondary");
 
-this.tooltipServiceWrapper.addTooltip<BarDatum>(
-  tooltipTargets,
-  (d: BarDatum) => {
-    let taskName = "";
-    let parentName = "";
+      this.tooltipServiceWrapper.addTooltip<BarDatum>(
+        tooltipTargets,
+        (d: BarDatum) => {
+          let taskName = "";
+          let parentName = "";
 
-    if (d.isGroup) {
-      parentName = (d.rowKey || "").replace(/^G:/, "");
-    } else {
-      const [taskRaw, parentRaw] = (d.rowKey || "").split("|");
-      taskName = (taskRaw || "").replace(/^T:/, "").replace(/^G:/, "");
-      parentName = (parentRaw || "").replace(/^T:/, "").replace(/^G:/, "");
-    }
+          if (d.isGroup) {
+            parentName = (d.rowKey || "").replace(/^G:/, "");
+          } else {
+            const [taskRaw, parentRaw] = (d.rowKey || "").split("|");
+            taskName = (taskRaw || "").replace(/^T:/, "").replace(/^G:/, "");
+            parentName = (parentRaw || "").replace(/^T:/, "").replace(/^G:/, "");
+          }
 
-    const tooltipItems: { displayName: string; value: string }[] = [
-      { displayName: "Parent", value: parentName },
-      ...(taskName ? [{ displayName: "Task", value: taskName }] : []),
-      { displayName: "Inicio P", value: d.start.toLocaleString() },
-      { displayName: "Fin P", value: d.end.toLocaleString() },
-    ];
+          const tooltipItems: { displayName: string; value: string }[] = [
+            { displayName: "Parent", value: parentName },
+            ...(taskName ? [{ displayName: "Task", value: taskName }] : []),
+            { displayName: "Inicio P", value: d.start.toLocaleString() },
+            { displayName: "Fin P", value: d.end.toLocaleString() },
+          ];
 
-    const c = Number(d.completion);
-    if (Number.isFinite(c) && c !== 0) {
-      const pct = c > 1 ? c : c * 100;
-      tooltipItems.push({ displayName: "Completado", value: `${Math.round(pct)}%` });
-    }
+          const c = Number(d.completion);
+          if (Number.isFinite(c) && c !== 0) {
+            const pct = c > 1 ? c : c * 100;
+            tooltipItems.push({ displayName: "Completado", value: `${Math.round(pct)}%` });
+          }
 
-    tooltipValues.forEach(val => {
-      const v = val.values[d.index];
-      tooltipItems.push({
-        displayName: val.source.displayName,
-        value: (v !== undefined && v !== null) ? String(v) : ""
-      });
-    });
+          tooltipValues.forEach(val => {
+            const v = val.values[d.index];
+            tooltipItems.push({
+              displayName: val.source.displayName,
+              value: (v !== undefined && v !== null) ? String(v) : ""
+            });
+          });
 
-    return tooltipItems;
-  },
-  (d: BarDatum) => d.selectionId
-);
+          return tooltipItems;
+        },
+        (d: BarDatum) => d.selectionId
+      );
 
     }
 
@@ -1320,7 +1528,6 @@ this.tooltipServiceWrapper.addTooltip<BarDatum>(
       if (fromRow?.task?.end && toRow?.task?.start) {
         depLines.push({ fromRow, toRow });
       } else {
-        console.warn("⚠️ Dependencia inválida:", dep);
       }
     });
 
@@ -1380,6 +1587,10 @@ this.tooltipServiceWrapper.addTooltip<BarDatum>(
       if (savedScrollTop !== undefined) {
         this.ganttDiv.node()!.scrollTop = savedScrollTop;
         this.ganttDiv.node()!.scrollLeft = savedScrollLeft ?? 0;
+
+        // 👇 forzar que el eje Y arranque alineado
+        this.leftG.select<SVGGElement>(".y-content")
+          .attr("transform", `translate(0, ${60 - savedScrollTop})`);
       }
       if (savedZoom) {
         this.ganttSVG.call(this.zoomBehavior.transform, savedZoom);
@@ -1791,33 +2002,38 @@ this.tooltipServiceWrapper.addTooltip<BarDatum>(
     const rangeWidth = this.xOriginal(end) - this.xOriginal(start);
     const scale = visibleW / rangeWidth;
 
-    const firstTask = this.cacheTasks.find(t => t.start && t.end);
-    if (!firstTask) return;
+    let barStart: number;
 
-    const barStart = this.xOriginal(firstTask.start!);
+    if (this.currentZoomTransform) {
+      const oldX = this.currentZoomTransform.rescaleX(this.xOriginal);
+      const [oldMin] = oldX.domain();  // borde izquierdo actual
 
-    // 👇 alinear inicio de la primera barra con el borde izquierdo del área de barras
+      // 🔍 buscar la primera tarea que esté visible en pantalla
+      const visibleTask = this.cacheTasks
+        .filter(t => t.start && t.end)
+        .sort((a, b) => +a.start! - +b.start!)
+        .find(t => t.start! >= oldMin);
+
+      if (visibleTask) {
+        barStart = this.xOriginal(visibleTask.start!); // 👈 inicio de esa barra
+      } else {
+        barStart = this.xOriginal(oldMin); // fallback si no encuentra
+      }
+    } else {
+      const firstTask = this.cacheTasks.find(t => t.start && t.end);
+      if (!firstTask) return;
+      barStart = this.xOriginal(firstTask.start!);
+    }
+
+    // 🔹 mantener tu lógica original de translateX
     const translateX = (this.marginLeft - this.marginLeft) - barStart * scale + 10;
 
     const t = d3.zoomIdentity
       .translate(translateX, 0)
       .scale(scale);
 
-    console.log("=== zoomToRange alineado ===");
-    console.log("marginLeft:", this.marginLeft);
-    console.log("barStart:", barStart);
-    console.log("scale:", scale);
-    console.log("translateX:", translateX);
-
     this.ganttSVG.call(this.zoomBehavior.transform, t);
   }
-
-
-
-
-
-
-
 
 
 

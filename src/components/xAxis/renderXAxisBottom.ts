@@ -43,7 +43,7 @@ export function renderXAxisBottom(params: {
       intervals = xScale.ticks(d3.timeDay.every(1));
       break;
     case "Mes":
-      formatFunc = esLocale.format("%b");
+      formatFunc = esLocale.format("%b %y");
       intervals = xScale.ticks(d3.timeMonth.every(1));
       break;
     case "Año":

@@ -618,6 +618,20 @@
           "type": {
             "integer": true
           }
+        },
+        "secStartWidth": {
+          "displayName": "Ancho campo de inicio secundaria",
+          "description": "Altura en píxeles; 0 = automático",
+          "type": {
+            "integer": true
+          }
+        },
+        "secEndWidth": {
+          "displayName": "Ancho campo de fin secundaria",
+          "description": "Altura en píxeles; 0 = automático",
+          "type": {
+            "integer": true
+          }
         }
       }
     },
