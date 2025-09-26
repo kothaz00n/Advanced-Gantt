@@ -1,48 +1,148 @@
 {
   "dataRoles": [
-    { "displayName": "Task", "name": "task", "kind": "Grouping" },
-    { "displayName": "Columns", "name": "columns", "kind": "GroupingOrMeasure"},
-    { "displayName": "Parent", "name": "parent", "kind": "Grouping" },
-    { "displayName": "Start Date", "name": "startDate", "kind": "Measure" },
-    { "displayName": "End Date", "name": "endDate", "kind": "Measure" },
-    { "displayName": "Secondary Start Date", "name": "secondaryStart", "kind": "Measure" },
-    { "displayName": "Secondary End Date", "name": "secondaryEnd", "kind": "Measure" },
-    { "displayName": "Duration", "name": "duration", "kind": "Measure" },
-    { "displayName": "Predecessor", "name": "predecessor", "kind": "GroupingOrMeasure" },
-    { "displayName": "Completion", "name": "completion", "kind": "Measure" },
-    { "displayName": "Tooltips", "name": "tooltips", "kind": "Measure" }
+    {
+      "displayName": "Task",
+      "name": "task",
+      "kind": "Grouping"
+    },
+    {
+      "displayName": "Columns",
+      "name": "columns",
+      "kind": "GroupingOrMeasure"
+    },
+    {
+      "displayName": "Parent",
+      "name": "parent",
+      "kind": "Grouping"
+    },
+    {
+      "displayName": "Start Date",
+      "name": "startDate",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "End Date",
+      "name": "endDate",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Secondary Start Date",
+      "name": "secondaryStart",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Secondary End Date",
+      "name": "secondaryEnd",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Duration",
+      "name": "duration",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Predecessor",
+      "name": "predecessor",
+      "kind": "GroupingOrMeasure"
+    },
+    {
+      "displayName": "Completion",
+      "name": "completion",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Tooltips",
+      "name": "tooltips",
+      "kind": "Measure"
+    }
   ],
   "dataViewMappings": [
     {
       "conditions": [
         {
-          "parent": { "max": 1 },
-          "startDate": { "max": 1 },
-          "endDate": { "max": 1 },
-          "secondaryEnd": { "max": 1},
-          "secondaryStart": { "max": 1},
-          "predecessor": { "max": 1},
-          "completion": {"max": 1},
-          "columns": {"max": 5}
+          "parent": {
+            "max": 1
+          },
+          "startDate": {
+            "max": 1
+          },
+          "endDate": {
+            "max": 1
+          },
+          "secondaryEnd": {
+            "max": 1
+          },
+          "secondaryStart": {
+            "max": 1
+          },
+          "predecessor": {
+            "max": 1
+          },
+          "completion": {
+            "max": 1
+          },
+          "columns": {
+            "max": 5
+          }
         }
       ],
       "categorical": {
         "categories": {
           "select": [
-            { "bind": { "to": "task" } },
-            { "bind": { "to": "parent" } },
-            { "bind": { "to": "predecessor" } },
-            { "for": { "in": "columns" } }
+            {
+              "bind": {
+                "to": "task"
+              }
+            },
+            {
+              "bind": {
+                "to": "parent"
+              }
+            },
+            {
+              "bind": {
+                "to": "predecessor"
+              }
+            },
+            {
+              "for": {
+                "in": "columns"
+              }
+            }
           ]
         },
         "values": {
           "select": [
-            { "bind": { "to": "startDate" } },
-            { "bind": { "to": "endDate" } },
-            { "bind": { "to": "columns" } },
-            { "bind": { "to": "secondaryStart" } },
-            { "bind": { "to": "secondaryEnd" } },
-            { "bind": { "to": "completion" } }
+            {
+              "bind": {
+                "to": "startDate"
+              }
+            },
+            {
+              "bind": {
+                "to": "endDate"
+              }
+            },
+            {
+              "bind": {
+                "to": "columns"
+              }
+            },
+            {
+              "bind": {
+                "to": "secondaryStart"
+              }
+            },
+            {
+              "bind": {
+                "to": "secondaryEnd"
+              }
+            },
+            {
+              "bind": {
+                "to": "completion"
+              }
+            }
           ]
         }
       }
@@ -61,6 +161,15 @@
         }
       }
     },
+    "formatState": {
+    "displayName": "Formato",
+    "properties": {
+      "selectedFormat": {
+        "displayName": "Formato seleccionado",
+        "type": { "text": true }
+      }
+    }
+  },
     "headerStyle": {
       "displayName": "Encabezados",
       "properties": {
@@ -205,54 +314,8 @@
         }
       }
     },
-    "labelStyleGroup": {
-      "displayName": "Etiqueta",
-      "properties": {
-        "fontFamily": {
-          "displayName": "Fuente",
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        },
-        "fontSize": {
-          "displayName": "Tamaño",
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontColor": {
-          "displayName": "Color",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "bold": {
-          "type": {
-            "bool": true
-          }
-        },
-        "italic": {
-          "type": {
-            "bool": true
-          }
-        },
-        "underline": {
-          "type": {
-            "bool": true
-          }
-        }
-      }
-    },
     "todayMarkerGroup": {
-      "displayName": "Etiqueta",
+      "displayName": "Etiqueta % de completado",
       "properties": {
         "fontFamily": {
           "displayName": "Fuente",
@@ -343,11 +406,30 @@
         }
       }
     },
-    "weekendCard": {"displayName": "Marcador fin de semanas", "properties": {"show": {"type": {"bool": true}}, "markerColor":{"type": {"fill": {"solid": {"color": true}}}}}},
+    "weekendCard": {
+      "displayName": "Marcador fin de semanas",
+      "properties": {
+        "show": {
+          "type": {
+            "bool": true
+          }
+        },
+        "markerColor": {
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
+          }
+        }
+      }
+    },
     "barCard": {
       "displayName": "Barras",
       "properties": {
-        "labelFontFamily": {
+        "fontFamily": {
+          "displayName": "Fuente",
           "type": {
             "formatting": {
               "fontFamily": true
@@ -422,141 +504,6 @@
           "type": {
             "numeric": true
           }
-        }
-      }
-    },
-    "timeMarkerCard": {
-      "displayName": "Time Marker",
-      "properties": {
-        "labelFontFamily": {
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        },
-        "fontSize": {
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontColor": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "bold": {
-          "type": {
-            "bool": true
-          }
-        },
-        "italic": {
-          "type": {
-            "bool": true
-          }
-        },
-        "underline": {
-          "type": {
-            "bool": true
-          }
-        },
-        "fill": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "barHeight": {
-          "type": {
-            "integer": true
-          }
-        },
-        "cornerRadius": {
-          "type": {
-            "integer": true
-          }
-        },
-        "opacity": {
-          "type": {
-            "numeric": true
-          }
-        },
-        "strokeColor": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "strokeWidth": {
-          "type": {
-            "numeric": true
-          }
-        }
-      }
-    },
-    "barStyleGroup": {
-      "displayName": "Estilo de barra",
-      "properties": {
-        "ParentSelector": {
-          "type": {
-            "text": true
-          }
-        },
-        "barHeight": {
-          "type": {
-            "integer": true
-          }
-        },
-        "cornerRadius": {
-          "type": {
-            "integer": true
-          }
-        },
-        "opacity": {
-          "type": {
-            "numeric": true
-          }
-        },
-        "strokeColor": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "strokeWidth": {
-          "type": {
-            "numeric": true
-          }
-        }
-      }
-    },
-    "barColors": {
-      "displayName": "Colores de barras",
-      "properties": {
-        "fill": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          },
-          "displayName": "Color de barra"
         }
       }
     },
@@ -692,41 +639,6 @@
           }
         }
       }
-    },
-    "adminCard": {
-      "displayName": "adminCard",
-      "properties": {
-        "Alto": {
-          "type": {
-            "integer": true
-          }
-        },
-        "Ancho": {
-          "type": {
-            "integer": true
-          }
-        },
-        "mTop": {
-          "type": {
-            "integer": true
-          }
-        },
-        "mBottom": {
-          "type": {
-            "integer": true
-          }
-        },
-        "mLeft": {
-          "type": {
-            "integer": true
-          }
-        },
-        "mRight": {
-          "type": {
-            "integer": true
-          }
-        }
-      }
     }
   },
   "tooltips": {
@@ -740,15 +652,19 @@
     ],
     "supportEnhancedTooltips": true
   },
-  "supportsLandingPage": true,
-  "sorting": {
-        "default": {   }
-    },
-  "drilldown": {
-    "roles": [
-      "task",
-      "parent"
-    ]
-  },
-  "privileges": []
+"suppressDefaultTitle": false,
+"supportsHighlight": true,
+"supportsLandingPage": true,
+"supportsKeyboardFocus": true,
+"supportsMultiVisualSelection": true,
+"sorting": {
+  "default": {}
+},
+"drilldown": {
+  "roles": [
+    "task",
+    "parent"
+  ]
+},
+"privileges": []
 }

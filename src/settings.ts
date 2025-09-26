@@ -118,7 +118,7 @@ class AxisXCardSettings extends SimpleCard {
    BARRAS
 ──────────────────────────────── */
 class BarLabelStyleGroup extends SimpleCard {
-    name: string = "labelStyleGroup";
+    name: string = "BarLabelStyleGroup";
     displayName: string = "Etiqueta";
 
     public fontFamily: FontPicker = new FontPicker({
@@ -189,11 +189,6 @@ class BarStyleGroup extends FormattingSettingsGroup {
                     description: "0 = transparente, 1 = sólido",
                     value: 0.8
                 }),
-                new ColorPicker({
-                    name: "strokeColor",
-                    displayName: "Color de borde",
-                    value: { value: "#3C99F7" }
-                }),
                 new NumUpDown({
                     name: "strokeWidth",
                     displayName: "Ancho de borde",
@@ -204,8 +199,6 @@ class BarStyleGroup extends FormattingSettingsGroup {
     }
 }
 
-
-// TODAY MARKER GROUP
 
 class TodayMarkerStyleGroup extends SimpleCard {
     name: string = "todayMarkerGroup";
@@ -338,7 +331,7 @@ class TaskCardSetting extends SimpleCard {
     showSecondaryColumns = new ToggleSwitch({
         name: "showSecondary",
         displayName: "Mostrar campos de Secondary",
-        value: true
+        value: false
     });
 
     taskHeight = new NumUpDown({
@@ -464,7 +457,7 @@ class WeekendCardSettings extends SimpleCard{
 ____________________*/
 class completionCardSettings extends SimpleCard {
     name: string = "completionStyleGroup";
-    displayName: string = "Etiqueta";
+    displayName: string = "Etiqueta % de completado";
 
     public fontFamily: FontPicker = new FontPicker({
         name: "fontFamily",
@@ -510,58 +503,6 @@ class completionCardSettings extends SimpleCard {
 
     public slices: formattingSettings.Slice[] = [this.font];
 }
-
-class adminSettings extends SimpleCard {
-
-    Alto = new NumUpDown({
-        name: "Alto",
-        displayName: "Alto",
-        value: 10
-    });
-
-    Ancho = new NumUpDown({
-        name: "Ancho",
-        displayName: "Ancho",
-        value: 10
-    });
-
-    Pad = new NumUpDown({
-        name: "Pad",
-        displayName: "Pad",
-        value: 10
-    });
-
-    mTop = new NumUpDown({
-        name: "mTop",
-        displayName: "mTop",
-        value: 1
-    })
-
-    mBottom = new NumUpDown({
-        name: "mBottom",
-        displayName: "mBottom",
-        value: 1
-    })
-
-    mLeft = new NumUpDown({
-        name: "mLeft",
-        displayName: "mLeft",
-        value: 1
-    })
-
-    mRight = new NumUpDown({
-        name: "mRight",
-        displayName: "mRight",
-        value: 1
-    })
-
-
-    name = "adminCard"
-    displayName = "Admin Card"
-
-    slices: formattingSettings.Slice[] = [this.Alto, this.Ancho, this.Pad, this.mTop, this.mBottom, this.mLeft, this.mRight]
-
-}
 /* ────────────────────────────────
    MODELO GLOBAL
 ──────────────────────────────── */
@@ -572,7 +513,6 @@ export class VisualFormattingSettingsModel extends Model {
     headerCard = new HeaderCardSettings();
     taskCard = new TaskCardSetting();
     parentCard = new ParentCardSetting();
-    adminCard = new adminSettings();
     colorSelector = new ColorSelectorCardSettings();
     weekendCard = new WeekendCardSettings();
     completionCard = new completionCardSettings();
@@ -585,7 +525,6 @@ export class VisualFormattingSettingsModel extends Model {
         this.headerCard,
         this.taskCard,
         this.parentCard,
-        this.adminCard,
         this.colorSelector,
         this.weekendCard,
         this.completionCard,

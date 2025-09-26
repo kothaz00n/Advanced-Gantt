@@ -3,6 +3,7 @@
 import "./../style/visual.less";
 import * as d3 from "d3";
 import powerbi from "powerbi-visuals-api";
+import powerbiVisualsApi from "powerbi-visuals-api";
 import { renderDurationLabels } from "./utils/renderLabels";
 import { renderFormatButtons } from "./components/formatButtons";
 import { renderParentToggleButtons } from "./components/parentButtons";
@@ -18,7 +19,8 @@ import { renderXAxisTop } from "./components/xAxis/renderXAxisTop";
 import IVisual = powerbi.extensibility.IVisual;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
-import ISelectionID = powerbi.visuals.ISelectionId
+import ISelectionId = powerbi.visuals.ISelectionId;
+import ISelectionManager = powerbi.extensibility.ISelectionManager;
 import IVisualHost = powerbi.extensibility.visual.IVisualHost;
 import DataView = powerbi.DataView;
 import DataViewCategoryColumn = powerbi.DataViewCategoryColumn;
@@ -27,7 +29,6 @@ import ISandboxExtendedColorPalette = powerbi.extensibility.ISandboxExtendedColo
 import Fill = powerbi.Fill;
 import FormattingId = powerbi.visuals.FormattingId;
 
-// Interfaces
 interface Task {
   id: string;
   parent: string;
@@ -39,7 +40,7 @@ interface Task {
   secondaryEnd?: Date;
   predecessor?: string;
   index: number;
-  extraCols?: string[];   // 👈 NUEVO: valores de Columns
+  extraCols?: string[];
 }
 
 interface VisualRow {
@@ -49,7 +50,7 @@ interface VisualRow {
   rowKey: string;
   labelY: string;
   duration?: number;
-  extraCols?: string[];   // 👈 para pintar también en filas de grupo
+  extraCols?: string[];
 }
 
 interface References {
@@ -67,7 +68,7 @@ export interface BarDatum {
   completion?: number;
   secondaryStart?: Date;
   secondaryEnd?: Date;
-  selectionId: ISelectionID;  // 👈 agregar esta línea
+  selectionId: ISelectionId;
 }
 
 const enum GanttObjectNames {
@@ -81,14 +82,13 @@ export interface GanttDataPoint {
   startDate: Date;
   endDate: Date;
   color: string;
-  selectionId: ISelectionID;
+  selectionId: ISelectionId;
   index: number;
   completion?: number;
   secondaryStart?: Date;
   secondaryEnd?: Date;
 }
 
-// Funciones
 function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHost): GanttDataPoint[] {
   const dataPoints: GanttDataPoint[] = [];
   const dataViews = options.dataViews;
@@ -108,12 +108,11 @@ function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHos
 
   const colorPalette: ISandboxExtendedColorPalette = host.colorPalette;
 
-  // 🔁 Agrupamos por parent único
   const uniqueParents = [...new Set(parent.values.map(v => `${v}`))];
 
   uniqueParents.forEach((value, i) => {
     const index = parent.values.findIndex(v => `${v}` === value);
-    const selectionId: ISelectionID = host.createSelectionIdBuilder()
+    const selectionId: ISelectionId = host.createSelectionIdBuilder()
       .withCategory(parent, index)
       .createSelectionId();
 
@@ -122,8 +121,8 @@ function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHos
     dataPoints.push({
       task: "",
       parent: value,
-      startDate: new Date(),
-      endDate: new Date(),
+      startDate: null,
+      endDate: null,
       color,
       selectionId,
       index
@@ -210,10 +209,12 @@ export class Visual implements IVisual {
   private extraColNames: string[] = [];
   private secondaryStartName: string = "Inicio R";
   private secondaryEndName: string = "Fin R";
-
-
-
-
+  private selectionManager: ISelectionManager;
+  private selectionIdMap: Map<string, ISelectionId>;
+  private selectedIds: ISelectionId[] = [];
+  private startName: string = "Start Date";
+  private endName: string = "End Date";
+  private parentName: string = "Parent";
 
 
   private computeInnerW(format: FormatType, start: Date, end: Date, width: number, margin: { left: number; right: number; }): number {
@@ -254,19 +255,19 @@ export class Visual implements IVisual {
     const width = x2 - x1;
 
     const yTop = scaleY(d.rowKey)! + (taskHeight - barHeight) / 2;
-    const topHeight = barHeight * 0.5; // Ancho de la barra de arriba
-    const tipHeight = barHeight * 0.6; // Alto de la barra
+    const topHeight = barHeight * 0.5;
+    const tipHeight = barHeight * 0.6;
     const tipInset = Math.min(width * 0.15, 35);
 
     return `
-    M${x1},${yTop}
-    H${x2}
-    L${x2},${yTop + topHeight + tipHeight}
-    L${x2 - tipInset},${yTop + topHeight}
-    H${x1 + tipInset}
-    L${x1},${yTop + topHeight + tipHeight}
-    Z
-  `;
+      M${x1},${yTop}
+      H${x2}
+      L${x2},${yTop + topHeight + tipHeight}
+      L${x2 - tipInset},${yTop + topHeight}
+      H${x1 + tipInset}
+      L${x1},${yTop + topHeight + tipHeight}
+      Z
+    `;
   }
 
   private getCompletionByGroup(rowKey: string, allBars: BarDatum[]): number {
@@ -294,6 +295,9 @@ export class Visual implements IVisual {
   constructor(opts: VisualConstructorOptions) {
     this.container = opts.element as HTMLElement;
     this.host = opts.host
+
+    this.selectionManager = this.host.createSelectionManager();
+    this.selectionIdMap = new Map();
 
     this.tooltipServiceWrapper = createTooltipServiceWrapper(
       opts.host.tooltipService,
@@ -325,7 +329,7 @@ export class Visual implements IVisual {
         allExpanded: this.allExpanded,
         onChange: onChangeHandler
       });
-      this.update(this.lastOptions, true); // preserva scroll y zoom
+      this.update(this.lastOptions, true);
     };
 
     renderParentToggleButtons({
@@ -338,25 +342,23 @@ export class Visual implements IVisual {
       container: this.rightBtns.node() as HTMLElement,
       onFormatChange: (fmt: string) => {
         const [newMin, newMax] = this.getDateRangeFromFormat(fmt as FormatType);
-
-        // mover la cámara al rango elegido
         this.zoomToRange(newMin, newMax);
 
-        // 🔹 forzar limpieza/redibujado inmediato
         if (this.currentZoomTransform) {
           const newX = this.currentZoomTransform.rescaleX(this.xOriginal);
-          this.selectedFormat = fmt as FormatType; // set explícito
+          this.selectedFormat = fmt as FormatType;
           this.redrawZoomedElements(newX, this.y, this.barH);
           this.updateFormatButtonsUI(this.selectedFormat);
+          this.host.persistProperties({
+            merge: [{
+              objectName: "formatState",
+              selector: null,
+              properties: { selectedFormat: this.selectedFormat }
+            }]
+          });
         }
       }
     });
-
-
-
-
-
-
 
 
     const layoutDiv = d3.select(this.container)
@@ -417,7 +419,7 @@ export class Visual implements IVisual {
         this.leftG.select<SVGGElement>(".y-content")
           .attr("transform", `translate(0, ${60 - top})`);
       });
-    }, { passive: true }); // 👈 importante
+    }, { passive: true });
 
     this.leftG = this.yAxisSVG.append("g");
     this.ganttG = this.ganttSVG.append("g");
@@ -425,9 +427,21 @@ export class Visual implements IVisual {
     this.landingG = this.ganttSVG.append("g")
       .attr("class", "landing")
       .style("pointer-events", "none");
+
+    d3.select(this.container).on("click", () => {
+      this.selectionManager.clear();
+    });
   }
 
   public update(opts: VisualUpdateOptions, preserveView = false): void {
+
+    const objects = opts.dataViews?.[0]?.metadata?.objects;
+    const persistedFmt = objects?.["formatState"]?.["selectedFormat"] as FormatType | undefined;
+
+    this.selectedFormat = persistedFmt ?? this.selectedFormat;
+    this.updateFormatButtonsUI(this.selectedFormat);
+
+
     const isDataUpdate = (opts.type & powerbi.VisualUpdateType.Data) !== 0;
     if (isDataUpdate) {
       preserveView = true;
@@ -445,21 +459,17 @@ export class Visual implements IVisual {
             const testX = t.rescaleX(this.xOriginal);
             const [testMin, testMax] = testX.domain();
 
-            // ✅ usar dataDomain para consistencia
             if (testMax < this.baseDomain![0] || testMin > this.baseDomain![1]) {
-              console.warn("⚠️ Transform fuera de dominio, reseteando zoom");
               this.currentZoomTransform = null;
               if (this.ganttSVG && this.zoomBehavior) {
                 this.ganttSVG.call(this.zoomBehavior.transform, d3.zoomIdentity);
               }
             } else {
-              // dentro del rango → verificar consistencia
               const overlap = Math.min(testMax.getTime(), dataDomain[1].getTime()) -
                 Math.max(testMin.getTime(), dataDomain[0].getTime());
               const visibleSpan = testMax.getTime() - testMin.getTime();
 
               if (visibleSpan <= 0 || overlap / visibleSpan < 0.2) {
-                console.warn("⚠️ Transform inconsistente, recalibrando");
                 this.currentZoomTransform = null;
                 if (this.ganttSVG && this.zoomBehavior) {
                   this.ganttSVG.call(this.zoomBehavior.transform, d3.zoomIdentity);
@@ -469,7 +479,6 @@ export class Visual implements IVisual {
               }
             }
           } else {
-            // spans inválidos → resetear
             this.currentZoomTransform = null;
             if (this.ganttSVG && this.zoomBehavior) {
               this.ganttSVG.call(this.zoomBehavior.transform, d3.zoomIdentity);
@@ -509,72 +518,72 @@ export class Visual implements IVisual {
     this.rightBtns.style("display", hasData ? "block" : "none");
     const pad = 10;
 
-const tasks = this.parseData(dv);
-if (tasks.length) this.cacheTasks = tasks;
+    const tasks = this.parseData(dv);
+    if (tasks.length) this.cacheTasks = tasks;
 
-const hasD = this.cacheTasks.some(t => t.fields.length > this.taskColCount);
-const extraColCount = this.cacheTasks[0]?.extraCols?.length ?? 0;
+    const hasD = this.cacheTasks.some(t => t.fields.length > this.taskColCount);
+    const extraColCount = this.cacheTasks[0]?.extraCols?.length ?? 0;
 
-const colWidths: number[] = [];
-colWidths.push(this.fmtSettings.taskCard.taskWidth.value);
-colWidths.push(this.fmtSettings.taskCard.startWidth.value);
-colWidths.push(this.fmtSettings.taskCard.endWidth.value);
+    const colWidths: number[] = [];
+    colWidths.push(this.fmtSettings.taskCard.taskWidth.value);
+    colWidths.push(this.fmtSettings.taskCard.startWidth.value);
+    colWidths.push(this.fmtSettings.taskCard.endWidth.value);
 
-for (let i = 0; i < extraColCount; i++) {
-  colWidths.push(150);
-}
+    for (let i = 0; i < extraColCount; i++) {
+      colWidths.push(150);
+    }
 
-if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
-  colWidths.push(this.fmtSettings.taskCard.startWidth.value);
-  colWidths.push(this.fmtSettings.taskCard.endWidth.value);
-}
+    if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
+      colWidths.push(this.fmtSettings.taskCard.startWidth.value);
+      colWidths.push(this.fmtSettings.taskCard.endWidth.value);
+    }
 
-if (hasD) {
-  colWidths.push(100);
-}
+    if (hasD) {
+      colWidths.push(100);
+    }
 
-this.width = opts.viewport.width;
-this.marginLeft = pad + colWidths.reduce((acc, w) => acc + w, 0);
+    this.width = opts.viewport.width;
+    this.marginLeft = pad + colWidths.reduce((acc, w) => acc + w, 0);
 
-const margin = {
-  top: 60,
-  right: 20,
-  bottom: 60,
-  left: this.marginLeft
-};
+    const margin = {
+      top: 60,
+      right: 20,
+      bottom: 60,
+      left: this.marginLeft
+    };
 
-this.yAxisSVG.selectAll("*").remove();
-this.ganttSVG.selectAll("*").remove();
-this.xAxisFixedG.selectAll("*").remove();
+    this.yAxisSVG.selectAll("*").remove();
+    this.ganttSVG.selectAll("*").remove();
+    this.xAxisFixedG.selectAll("*").remove();
 
-if (!hasData) {
-  this.landingG = this.ganttSVG.append("g")
-    .attr("class", "landing")
-    .style("pointer-events", "none");
-  this.ganttSVG
-    .attr("width", width)
-    .attr("height", height);
-  this.yAxisSVG.attr("display", "none")
-    .attr("width", margin.left)
-    .attr("height", height);
-  this.xAxisFixedDiv.style("display", "none");
-  this.xAxisFixedSVG.style("display", "none");
-  this.xAxisFixedG.style("display", "none");
-  this.renderLanding(width, height);
-  return;
-}
-this.xAxisFixedDiv.style("display", null);
-this.xAxisFixedSVG.style("display", null);
-this.xAxisFixedG.style("display", null);
-this.yAxisSVG.attr("display", null);
-this.landingG.attr("display", "none");
+    if (!hasData) {
+      this.landingG = this.ganttSVG.append("g")
+        .attr("class", "landing")
+        .style("pointer-events", "none");
+      this.ganttSVG
+        .attr("width", width)
+        .attr("height", height);
+      this.yAxisSVG.attr("display", "none")
+        .attr("width", margin.left)
+        .attr("height", height);
+      this.xAxisFixedDiv.style("display", "none");
+      this.xAxisFixedSVG.style("display", "none");
+      this.xAxisFixedG.style("display", "none");
+      this.renderLanding(width, height);
+      return;
+    }
+    this.xAxisFixedDiv.style("display", null);
+    this.xAxisFixedSVG.style("display", null);
+    this.xAxisFixedG.style("display", null);
+    this.yAxisSVG.attr("display", null);
+    this.landingG.attr("display", "none");
 
-const expCache = new Map(this.expanded);
-const { visibleRows, expanded } = this.buildRows(this.cacheTasks, expCache);
-this.expanded = expanded;
+    const expCache = new Map(this.expanded);
+    const { visibleRows, expanded } = this.buildRows(this.cacheTasks, expCache);
+    this.expanded = expanded;
 
-const rowH = this.fmtSettings.taskCard.taskHeight.value;
-const innerH = rowH * visibleRows.length;
+    const rowH = this.fmtSettings.taskCard.taskHeight.value;
+    const innerH = rowH * visibleRows.length;
 
 
     this.innerW = this.computeInnerW(
@@ -609,8 +618,6 @@ const innerH = rowH * visibleRows.length;
       ? this.currentZoomTransform.rescaleX(this.xOriginal)
       : this.xOriginal.copy();
 
-
-    // yScale
     this.y = d3.scaleBand()
       .domain(visibleRows.map(r => r.rowKey))
       .range([0, innerH])
@@ -641,11 +648,8 @@ const innerH = rowH * visibleRows.length;
       .attr("transform", `translate(0, ${margin.top})`);
     const gridYPos = visibleRows.map(r => this.y(r.rowKey)!);
 
-    // ✅ nunca más extiendas acá
-    // el dominio base ya está en this.baseDomain
     this.xOriginal.domain(this.baseDomain!);
 
-    // 2) Variables para drag vertical/horizontal
     let isDragging = false;
     let startX = 0;
     let startY = 0;
@@ -653,9 +657,8 @@ const innerH = rowH * visibleRows.length;
 
     this.zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.35, 100])
-      .translateExtent([[-1e9, -1e9], [1e9, 1e9]]) // pan libre
+      .translateExtent([[-1e9, -1e9], [1e9, 1e9]])
       .filter((event) => {
-        // permitir rueda para zoom y arrastre para pan
         return !event.ctrlKey || event.type === "wheel" || event.type === "mousedown";
       })
       .on("zoom", (event) => {
@@ -704,21 +707,19 @@ const innerH = rowH * visibleRows.length;
       .on("dblclick", () => {
         const [minDate, maxDate] = this.xOriginal.domain();
 
-        // calcular transform destino con zoomToRange pero sin aplicarlo directo
         const visibleW = this.width - this.marginLeft;
         const rangeWidth = this.xOriginal(maxDate) - this.xOriginal(minDate);
         const scale = visibleW / rangeWidth;
 
-        const barStart = this.xOriginal(minDate); // todo el rango arranca en minDate
+        const barStart = this.xOriginal(minDate);
         const translateX = (this.marginLeft - this.marginLeft) - barStart * scale + 10;
 
         const targetTransform = d3.zoomIdentity
           .translate(translateX, 0)
           .scale(scale);
 
-        // animación suave al transform destino
         this.ganttSVG.transition()
-          .duration(500) // 0.50 segundos (ajustable)
+          .duration(500)
           .call(this.zoomBehavior.transform, targetTransform);
         this.selectedFormat = "Año";
         this.updateFormatButtonsUI(this.selectedFormat);
@@ -769,129 +770,121 @@ const innerH = rowH * visibleRows.length;
       event.preventDefault();
     });
 
-    // ====================== HEADER ======================
-if (headFmt.show.value) {
-  const header = yAxisContentG.append("g")
-    .attr("class", "y-grid")
-    .selectAll("line")
-    .data(gridYPos)
-    .join("line")
-    .attr("x1", 0)
-    .attr("x2", margin.left)
-    .attr("y1", d => d)
-    .attr("y2", d => d)
-    .attr("stroke", this.fmtSettings.axisYCard.lineColor.value.value)
-    .attr("stroke-width", 1);
+    if (headFmt.show.value) {
+      const header = yAxisContentG.append("g")
+        .attr("class", "y-grid")
+        .selectAll("line")
+        .data(gridYPos)
+        .join("line")
+        .attr("x1", 0)
+        .attr("x2", margin.left)
+        .attr("y1", d => d)
+        .attr("y2", d => d)
+        .attr("stroke", this.fmtSettings.axisYCard.lineColor.value.value)
+        .attr("stroke-width", 1);
 
-  const head = this.leftG.append("g")
-    .attr("class", "header")
-    .attr("transform", `translate(0, ${margin.top})`);
+      const head = this.leftG.append("g")
+        .attr("class", "header")
+        .attr("transform", `translate(0, ${margin.top})`);
 
-  head.append("rect")
-    .attr("x", 0)
-    .attr("y", -90)
-    .attr("width", margin.left)
-    .attr("height", 90)
-    .attr("zindex", 999)
-    .attr("fill", this.fmtSettings.headerCard.backgroundColor.value.value);
+      head.append("rect")
+        .attr("x", 0)
+        .attr("y", -90)
+        .attr("width", margin.left)
+        .attr("height", 90)
+        .attr("zindex", 999)
+        .attr("fill", this.fmtSettings.headerCard.backgroundColor.value.value);
 
-  head.append("line")
-    .attr("x1", 0)
-    .attr("x2", margin.left)
-    .attr("y1", 0)
-    .attr("y2", 0)
-    .attr("stroke", this.fmtSettings.axisYCard.lineColor.value.value)
-    .attr("stroke-width", this.fmtSettings.axisYCard.widthLine.value);
+      head.append("line")
+        .attr("x1", 0)
+        .attr("x2", margin.left)
+        .attr("y1", 0)
+        .attr("y2", 0)
+        .attr("stroke", this.fmtSettings.axisYCard.lineColor.value.value)
+        .attr("stroke-width", this.fmtSettings.axisYCard.widthLine.value);
 
-  // === Nombres dinámicos de columnas de tarea ===
-  this.taskColNames.forEach((n, i) => {
-    head.append("text").text(n)
-      .attr("x", colX(i) + colWidths[i] / 2) // centrado
-      .attr("y", -10)
-      .attr("zindex", 999)
-      .attr("fill", headFmt.fontColor.value.value)
-      .attr("font-size", headFmt.fontSize.value)
-      .attr("font-family", headFmt.fontFamily.value)
-      .attr("text-anchor", "middle");
-  });
+      this.taskColNames.forEach((n, i) => {
+        head.append("text").text(n)
+          .attr("x", colX(i) + colWidths[i] / 2)
+          .attr("y", -10)
+          .attr("zindex", 999)
+          .attr("fill", headFmt.fontColor.value.value)
+          .attr("font-size", headFmt.fontSize.value)
+          .attr("font-family", headFmt.fontFamily.value)
+          .attr("text-anchor", "middle");
+      });
 
-  // === Columnas fijas ===
-  head.append("text").text("Inicio P")
-    .attr("x", colX(this.taskColCount) + colWidths[this.taskColCount] / 2)
-    .attr("y", -10)
-    .attr("zindex", 999)
-    .attr("fill", headFmt.fontColor.value.value)
-    .attr("font-size", headFmt.fontSize.value)
-    .attr("font-family", headFmt.fontFamily.value)
-    .attr("text-anchor", "middle");
+      head.append("text").text(this.startName)
+        .attr("x", colX(this.taskColCount) + colWidths[this.taskColCount] / 2)
+        .attr("y", -10)
+        .attr("zindex", 999)
+        .attr("fill", headFmt.fontColor.value.value)
+        .attr("font-size", headFmt.fontSize.value)
+        .attr("font-family", headFmt.fontFamily.value)
+        .attr("text-anchor", "middle");
 
-  head.append("text").text("Fin P")
-    .attr("x", colX(this.taskColCount + 1) + colWidths[this.taskColCount + 1] / 2)
-    .attr("y", -10)
-    .attr("zindex", 999)
-    .attr("fill", headFmt.fontColor.value.value)
-    .attr("font-size", headFmt.fontSize.value)
-    .attr("font-family", headFmt.fontFamily.value)
-    .attr("text-anchor", "middle");
+      head.append("text").text(this.endName)
+        .attr("x", colX(this.taskColCount + 1) + colWidths[this.taskColCount + 1] / 2)
+        .attr("y", -10)
+        .attr("zindex", 999)
+        .attr("fill", headFmt.fontColor.value.value)
+        .attr("font-size", headFmt.fontSize.value)
+        .attr("font-family", headFmt.fontFamily.value)
+        .attr("text-anchor", "middle");
 
-  // === Columnas dinámicas extra ===
-  // === Columnas dinámicas extra ===
-if (extraColCount > 0) {
-  const baseIndex = this.taskColCount + 2 + (this.fmtSettings.taskCard.showSecondaryColumns.value ? 2 : 0);
+      if (extraColCount > 0) {
+        const baseIndex = this.taskColCount + 2 + (this.fmtSettings.taskCard.showSecondaryColumns.value ? 2 : 0);
 
-  for (let i = 0; i < extraColCount; i++) {
-    const colName = this.extraColNames?.[i] ?? `Col ${i + 1}`;
-    const colIndex = baseIndex + i;
-    head.append("text").text(colName)
-      .attr("x", colX(colIndex) + colWidths[colIndex] / 2) // 👈 centrado
-      .attr("y", -10)
-      .attr("zindex", 999)
-      .attr("fill", headFmt.fontColor.value.value)
-      .attr("font-size", headFmt.fontSize.value)
-      .attr("font-family", headFmt.fontFamily.value)
-      .attr("text-anchor", "middle");
-  }
-}
+        for (let i = 0; i < extraColCount; i++) {
+          const colName = this.extraColNames?.[i] ?? `Col ${i + 1}`;
+          const colIndex = baseIndex + i;
+          head.append("text").text(colName)
+            .attr("x", colX(colIndex) + colWidths[colIndex] / 2)
+            .attr("y", -10)
+            .attr("zindex", 999)
+            .attr("fill", headFmt.fontColor.value.value)
+            .attr("font-size", headFmt.fontSize.value)
+            .attr("font-family", headFmt.fontFamily.value)
+            .attr("text-anchor", "middle");
+        }
+      }
 
+      if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
+        head.append("text").text(this.secondaryStartName)
+          .attr("x", colX(this.taskColCount + 2) + colWidths[this.taskColCount + 2] / 2)
+          .attr("y", -10)
+          .attr("zindex", 999)
+          .attr("fill", headFmt.fontColor.value.value)
+          .attr("font-size", headFmt.fontSize.value)
+          .attr("font-family", headFmt.fontFamily.value)
+          .attr("text-anchor", "middle");
 
-  // === Columnas secundarias ===
-  if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
-    head.append("text").text(this.secondaryStartName)
-      .attr("x", colX(this.taskColCount + 2) + colWidths[this.taskColCount + 2] / 2)
-      .attr("y", -10)
-      .attr("zindex", 999)
-      .attr("fill", headFmt.fontColor.value.value)
-      .attr("font-size", headFmt.fontSize.value)
-      .attr("font-family", headFmt.fontFamily.value)
-      .attr("text-anchor", "middle");
+        head.append("text").text(this.secondaryEndName)
+          .attr("x", colX(this.taskColCount + 3) + colWidths[this.taskColCount + 3] / 2)
+          .attr("y", -10)
+          .attr("zindex", 999)
+          .attr("fill", headFmt.fontColor.value.value)
+          .attr("font-size", headFmt.fontSize.value)
+          .attr("font-family", headFmt.fontFamily.value)
+          .attr("text-anchor", "middle");
+      }
 
-    head.append("text").text(this.secondaryEndName)
-      .attr("x", colX(this.taskColCount + 3) + colWidths[this.taskColCount + 3] / 2)
-      .attr("y", -10)
-      .attr("zindex", 999)
-      .attr("fill", headFmt.fontColor.value.value)
-      .attr("font-size", headFmt.fontSize.value)
-      .attr("font-family", headFmt.fontFamily.value)
-      .attr("text-anchor", "middle");
-  }
-
-  // === Duración ===
-  if (hasD) {
-    const durIndex = this.taskColCount + (this.fmtSettings.taskCard.showSecondaryColumns.value ? 4 : 2);
-    head.append("text").text("Duración")
-      .attr("x", colX(durIndex) + colWidths[durIndex] / 2)
-      .attr("y", -10)
-      .attr("zindex", 999)
-      .attr("fill", headFmt.fontColor.value.value)
-      .attr("font-size", headFmt.fontSize.value)
-      .attr("font-family", headFmt.fontFamily.value)
-      .attr("text-anchor", "middle");
-  }
-}
+      if (hasD) {
+        const durIndex = this.taskColCount + (this.fmtSettings.taskCard.showSecondaryColumns.value ? 4 : 2);
+        head.append("text").text("Duración")
+          .attr("x", colX(durIndex) + colWidths[durIndex] / 2)
+          .attr("y", -10)
+          .attr("zindex", 999)
+          .attr("fill", headFmt.fontColor.value.value)
+          .attr("font-size", headFmt.fontSize.value)
+          .attr("font-family", headFmt.fontFamily.value)
+          .attr("text-anchor", "middle");
+      }
+    }
 
 
 
-    const dateFmt = d3.timeFormat("%d/%m/%Y %H:%M:%S");
+    const dateFmt = d3.timeFormat("%d/%m/%Y %H:%M");
     const self = this;
 
     const yScale = this.y
@@ -937,16 +930,16 @@ if (extraColCount > 0) {
             });
 
           label.text(null);
+
           label.append("tspan")
             .attr("fill", triColor)
             .text(exp ? "▼" : "▶")
-            .attr("data-rowKey", row.rowKey);
-          label.append("tspan")
-            .attr("fill", parFmt.fontColor.value.value)
-            .text(" " + row.labelY)
+            .attr("dy", "3px")
             .attr("data-rowKey", row.rowKey);
 
-          // --- Fechas y secundarias ---
+          label.append("tspan")
+            .text(" " + row.labelY);
+
           const r = self.groupRange.get(row.id);
           if (r) {
             g.append("text").text(dateFmt(r.start))
@@ -955,6 +948,7 @@ if (extraColCount > 0) {
               .attr("font-weight", "bold")
               .attr("fill", parFmt.fontColor.value.value)
               .attr("font-size", parFmt.fontSize.value)
+              .attr("data-rowKey", row.rowKey)
               .attr("font-family", parFmt.fontFamily.value);
 
             g.append("text").text(dateFmt(r.end))
@@ -962,6 +956,7 @@ if (extraColCount > 0) {
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-weight", "bold")
               .attr("fill", parFmt.fontColor.value.value)
+              .attr("data-rowKey", row.rowKey)
               .attr("font-size", parFmt.fontSize.value)
               .attr("font-family", parFmt.fontFamily.value);
 
@@ -972,6 +967,7 @@ if (extraColCount > 0) {
                   .attr("y", top + yScale.bandwidth() / 2 + 4)
                   .attr("font-weight", "bold")
                   .attr("fill", parFmt.fontColor.value.value)
+                  .attr("data-rowKey", row.rowKey)
                   .attr("font-size", parFmt.fontSize.value)
                   .attr("font-family", parFmt.fontFamily.value);
               }
@@ -981,6 +977,7 @@ if (extraColCount > 0) {
                   .attr("y", top + yScale.bandwidth() / 2 + 4)
                   .attr("font-weight", "bold")
                   .attr("fill", parFmt.fontColor.value.value)
+                  .attr("data-rowKey", row.rowKey)
                   .attr("font-size", parFmt.fontSize.value)
                   .attr("font-family", parFmt.fontFamily.value);
               }
@@ -989,19 +986,17 @@ if (extraColCount > 0) {
 
           if (row.duration !== undefined && hasD) {
             g.append("text").text(String(row.duration))
-              // 👇 si hay columnas secundarias, mover Duración más a la derecha
               .attr("x", colX(self.taskColCount + (self.fmtSettings.taskCard.showSecondaryColumns.value ? 4 : 2)))
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-weight", "bold")
               .attr("fill", parFmt.fontColor.value.value)
+              .attr("data-rowKey", row.rowKey)
               .attr("font-size", parFmt.fontSize.value)
               .attr("font-family", parFmt.fontFamily.value);
           }
 
-          // === Pintar columnas extra en fila Parent ===
           if (self.extraColNames.length > 0) {
             self.extraColNames.forEach((colName, i) => {
-              // 🔹 buscar todos los hijos de este parent
               const children = self.cacheTasks.filter(t => t.parent === row.id);
               const vals = children.map(t => t.extraCols?.[i]).filter(v => v !== undefined && v !== "");
 
@@ -1009,13 +1004,19 @@ if (extraColCount > 0) {
               if (vals.length) {
                 const nums = vals.map(Number).filter(n => !isNaN(n));
                 if (nums.length === vals.length) {
-                  aggVal = d3.mean(nums)!.toFixed(1); // promedio si son numéricos
+                  aggVal = d3.mean(nums)!.toFixed(1);
                 } else {
-                  aggVal = [...new Set(vals)].join(", "); // únicos si son textos
+                  const firstVal = vals[0] as string;
+                  const d = new Date(firstVal);
+                  if (!isNaN(d.getTime())) {
+                    aggVal = d3.timeFormat("%d/%m/%Y %H:%M")(d);
+                  } else {
+                    // 🔹 fallback → concatenar únicos
+                    aggVal = [...new Set(vals)].join(", ");
+                  }
                 }
               }
 
-              // 👇 extraCols se corren detrás de secundarias si están activas
               const baseIndex = self.taskColCount + 2 + (self.fmtSettings.taskCard.showSecondaryColumns.value ? 2 : 0);
               const colIndex = baseIndex + i;
 
@@ -1026,112 +1027,134 @@ if (extraColCount > 0) {
                 .attr("font-weight", "bold")
                 .attr("fill", parFmt.fontColor.value.value)
                 .attr("font-size", parFmt.fontSize.value)
+                .attr("data-rowKey", row.rowKey)
                 .attr("font-family", parFmt.fontFamily.value);
             });
           }
+
         }
 
         else if (row.task) {
-  const hasDuration = row.task.fields.length > self.taskColCount;
-  const durationIndex = hasDuration ? row.task.fields.length - 1 : -1;
-  const showSecondaryColumns = self.fmtSettings.taskCard.showSecondaryColumns.value;
+          const hasDuration = row.task.fields.length > self.taskColCount;
+          const durationIndex = hasDuration ? row.task.fields.length - 1 : -1;
+          const showSecondaryColumns = self.fmtSettings.taskCard.showSecondaryColumns.value;
 
-  const dateFmt = d3.timeFormat("%d/%m/%Y %H:%M");
+          const dateFmt = d3.timeFormat("%d/%m/%Y %H:%M");
 
-  // === Pintar columnas base (task fields) ===
-  row.task.fields.forEach((val, i) => {
-    if (hasDuration && i === durationIndex) return;
+          row.task.fields.forEach((val, i) => {
+            if (hasDuration && i === durationIndex) return;
 
-    const maxWidth = colWidths[i] - 8;
-    const tmp = g.append("text")
-      .attr("x", colX(i))
-      .attr("y", top + yScale.bandwidth() / 2 + 4)
-      .attr("font-size", taskFmt.fontSize.value)
-      .attr("fill", taskFmt.fontColor.value.value)
-      .attr("font-family", taskFmt.fontFamily.value)
-      .attr("data-rowKey", row.rowKey)
-      .text(val);
+            const maxWidth = colWidths[i] - 8;
+            const tmp = g.append("text")
+              .attr("x", colX(i))
+              .attr("y", top + yScale.bandwidth() / 2 + 4)
+              .attr("font-size", taskFmt.fontSize.value)
+              .attr("fill", taskFmt.fontColor.value.value)
+              .attr("font-family", taskFmt.fontFamily.value)
+              .attr("data-rowKey", row.rowKey)
+              .text(val);
 
-    let textNode = tmp.node() as SVGTextElement;
-    if (textNode.getComputedTextLength() > maxWidth) {
-      let str = val;
-      while (str.length && textNode.getComputedTextLength() > maxWidth) {
-        str = str.slice(0, -1);
-        tmp.text(str + "…");
-        textNode = tmp.node() as SVGTextElement;
-      }
-    }
-    tmp.append("title").text(val);
-  });
+            let textNode = tmp.node() as SVGTextElement;
+            if (textNode.getComputedTextLength() > maxWidth) {
+              let str = val;
+              while (str.length && textNode.getComputedTextLength() > maxWidth) {
+                str = str.slice(0, -1);
+                tmp.text(str + "…");
+                textNode = tmp.node() as SVGTextElement;
+              }
+            }
+            tmp.append("title").text(val);
+          });
 
-  // === Inicio P ===
-  g.append("text")
-    .text(row.task.start && !isNaN(row.task.start.getTime()) ? dateFmt(row.task.start) : " ")
-    .attr("x", colX(self.taskColCount))
-    .attr("y", top + yScale.bandwidth() / 2 + 4)
-    .attr("font-size", taskFmt.fontSize.value)
-    .attr("fill", taskFmt.fontColor.value.value)
-    .attr("font-family", taskFmt.fontFamily.value);
+          // === Inicio P ===
+          g.append("text")
+            .text(row.task.start && !isNaN(row.task.start.getTime()) ? dateFmt(row.task.start) : " ")
+            .attr("x", colX(self.taskColCount))
+            .attr("y", top + yScale.bandwidth() / 2 + 4)
+            .attr("font-size", taskFmt.fontSize.value)
+            .attr("fill", taskFmt.fontColor.value.value)
+            .attr("data-rowKey", row.rowKey)
+            .attr("font-family", taskFmt.fontFamily.value);
 
-  // === Fin P ===
-  g.append("text")
-    .text(row.task.end && !isNaN(row.task.end.getTime()) ? dateFmt(row.task.end) : " ")
-    .attr("x", colX(self.taskColCount + 1))
-    .attr("y", top + yScale.bandwidth() / 2 + 4)
-    .attr("font-size", taskFmt.fontSize.value)
-    .attr("fill", taskFmt.fontColor.value.value)
-    .attr("font-family", taskFmt.fontFamily.value);
+          // === Fin P ===
+          g.append("text")
+            .text(row.task.end && !isNaN(row.task.end.getTime()) ? dateFmt(row.task.end) : " ")
+            .attr("x", colX(self.taskColCount + 1))
+            .attr("y", top + yScale.bandwidth() / 2 + 4)
+            .attr("font-size", taskFmt.fontSize.value)
+            .attr("fill", taskFmt.fontColor.value.value)
+            .attr("data-rowKey", row.rowKey)
+            .attr("font-family", taskFmt.fontFamily.value);
 
-  // === Secondary (si está activo) ===
-  if (showSecondaryColumns) {
-    g.append("text")
-      .text(row.task.secondaryStart && !isNaN(row.task.secondaryStart.getTime()) ? dateFmt(row.task.secondaryStart) : " ")
-      .attr("x", colX(self.taskColCount + 2))
-      .attr("y", top + yScale.bandwidth() / 2 + 4)
-      .attr("font-size", taskFmt.fontSize.value)
-      .attr("fill", taskFmt.fontColor.value.value)
-      .attr("font-family", taskFmt.fontFamily.value);
+          // === Secondary (si está activo) ===
+          if (showSecondaryColumns) {
+            g.append("text")
+              .text(row.task.secondaryStart && !isNaN(row.task.secondaryStart.getTime()) ? dateFmt(row.task.secondaryStart) : " ")
+              .attr("x", colX(self.taskColCount + 2))
+              .attr("y", top + yScale.bandwidth() / 2 + 4)
+              .attr("font-size", taskFmt.fontSize.value)
+              .attr("data-rowKey", row.rowKey)
+              .attr("fill", taskFmt.fontColor.value.value)
+              .attr("font-family", taskFmt.fontFamily.value);
 
-    g.append("text")
-      .text(row.task.secondaryEnd && !isNaN(row.task.secondaryEnd.getTime()) ? dateFmt(row.task.secondaryEnd) : " ")
-      .attr("x", colX(self.taskColCount + 3))
-      .attr("y", top + yScale.bandwidth() / 2 + 4)
-      .attr("font-size", taskFmt.fontSize.value)
-      .attr("fill", taskFmt.fontColor.value.value)
-      .attr("font-family", taskFmt.fontFamily.value);
-  }
+            g.append("text")
+              .text(row.task.secondaryEnd && !isNaN(row.task.secondaryEnd.getTime()) ? dateFmt(row.task.secondaryEnd) : " ")
+              .attr("x", colX(self.taskColCount + 3))
+              .attr("y", top + yScale.bandwidth() / 2 + 4)
+              .attr("font-size", taskFmt.fontSize.value)
+              .attr("data-rowKey", row.rowKey)
+              .attr("fill", taskFmt.fontColor.value.value)
+              .attr("font-family", taskFmt.fontFamily.value);
+          }
 
-  // === ExtraCols justo acá (se pintan en el mismo flujo) ===
-  if (row.task.extraCols && self.extraColNames.length) {
-  row.task.extraCols.forEach((val, i) => {
-    const baseIndex = self.taskColCount + 2 + (showSecondaryColumns ? 2 : 0);
-    const colIndex = baseIndex + i;
+          // === ExtraCols justo acá (se pintan en el mismo flujo) ===
+          if (row.task.extraCols && self.extraColNames.length) {
+            row.task.extraCols.forEach((val, i) => {
+              const baseIndex = self.taskColCount + 2 + (showSecondaryColumns ? 2 : 0);
+              const colIndex = baseIndex + i;
 
-    const tmp = g.append("text")
-      .attr("x", colX(colIndex))
-      .attr("y", top + yScale.bandwidth() / 2 + 4)
-      .attr("font-size", taskFmt.fontSize.value)
-      .attr("fill", taskFmt.fontColor.value.value)
-      .attr("font-family", taskFmt.fontFamily.value)
-      .attr("data-rowKey", row.rowKey)
-      .text(val || "");   // ← incluso si está vacío
+              let displayVal = val || "";
 
-    tmp.append("title").text(val || "");
-  });
-}
+              if (displayVal !== "") {
+                // 👉 Si es número => mostrar con "h"
+                if (!isNaN(Number(displayVal))) {
+                  const num = Number(displayVal);
+                  displayVal = `${num.toFixed(1)} h`;  // ej: 12.4 → "12.4 h"
+                } else {
+                  // 👉 Si es fecha válida => formatear
+                  const d = new Date(displayVal);
+                  if (!isNaN(d.getTime())) {
+                    displayVal = d3.timeFormat("%d/%m/%Y %H:%M")(d);
+                  }
+                }
+              }
+
+              const tmp = g.append("text")
+                .attr("x", colX(colIndex))
+                .attr("y", top + yScale.bandwidth() / 2 + 4)
+                .attr("font-size", taskFmt.fontSize.value)
+                .attr("fill", taskFmt.fontColor.value.value)
+                .attr("font-family", taskFmt.fontFamily.value)
+                .attr("data-rowKey", row.rowKey)
+                .text(displayVal);
+
+              tmp.append("title").text(displayVal);
+            });
+          }
 
 
-  // === Duración (último campo) ===
-  if (hasDuration) {
-    const durationVal = row.task.fields[durationIndex];
-    g.append("text").text(durationVal)
-      .attr("x", colX(self.taskColCount + 2))
-      .attr("y", top + yScale.bandwidth() / 2 + 4)
-      .attr("font-size", taskFmt.fontSize.value)
-      .attr("fill", taskFmt.fontColor.value.value)
-      .attr("font-family", taskFmt.fontFamily.value);
-  }
-}
+
+          // === Duración (último campo) ===
+          if (hasDuration) {
+            const durationVal = row.task.fields[durationIndex];
+            g.append("text").text(durationVal)
+              .attr("x", colX(self.taskColCount + 2))
+              .attr("y", top + yScale.bandwidth() / 2 + 4)
+              .attr("font-size", taskFmt.fontSize.value)
+              .attr("fill", taskFmt.fontColor.value.value)
+              .attr("font-family", taskFmt.fontFamily.value);
+          }
+        }
 
 
 
@@ -1172,7 +1195,7 @@ if (extraColCount > 0) {
     const yOff = (taskFmt.taskHeight.value - this.barH) / 2;
 
     const categorical = opts.dataViews[0].categorical;
-    const taskCategory = categorical.categories[0]; // 👈 una sola columna
+    const taskCategory = categorical.categories[0];
 
     const taskBars: BarDatum[] = visibleRows
       .filter(r => !r.isGroup && r.task)
@@ -1188,7 +1211,7 @@ if (extraColCount > 0) {
         secondaryEnd: r.task!.secondaryEnd ? new Date(r.task!.secondaryEnd) : undefined,
         selectionId: this.host.createSelectionIdBuilder()
           .withCategory(taskCategory, r.task!.index)
-          .createSelectionId() as ISelectionID
+          .createSelectionId() as ISelectionId
       }));
 
     const parentCategory = categorical.categories[1];
@@ -1216,14 +1239,14 @@ if (extraColCount > 0) {
               completion: t.completion,
               selectionId: this.host.createSelectionIdBuilder()
                 .withCategory(taskCategory, j)
-                .createSelectionId() as ISelectionID
+                .createSelectionId() as ISelectionId
             }))
           ),
           secondaryStart: range.secondaryStart ? new Date(range.secondaryStart) : undefined,
           secondaryEnd: range.secondaryEnd ? new Date(range.secondaryEnd) : undefined,
           selectionId: this.host.createSelectionIdBuilder()
             .withCategory(parentCategory, i)
-            .createSelectionId() as ISelectionID
+            .createSelectionId() as ISelectionId
         };
       });
 
@@ -1239,7 +1262,7 @@ if (extraColCount > 0) {
 
       let key: string | undefined;
       if (d.rowKey?.startsWith("G:")) {
-        key = d.rowKey.slice(2); // quita "G:"
+        key = d.rowKey.slice(2);
       } else if (d.rowKey?.includes("|")) {
         key = d.rowKey.split("|")[1];
       }
@@ -1344,21 +1367,43 @@ if (extraColCount > 0) {
           return dp?.color ?? "#72c0ffff";
         })
         .attr("stroke-width", (barCfg.barGroup.slices.find(s => s.name === "strokeWidth") as formattingSettings.Slider).value)
+
+        .attr("tabindex", 0)
+        .on("keydown", (event, d: BarDatum) => {
+          if (event.key === "Enter" || event.key === " ") {
+            this.selectionManager.select(d.selectionId, true).then((ids: ISelectionId[]) => {
+              this.selectedIds = ids;
+              this.update(this.lastOptions);
+            });
+            event.preventDefault();
+          }
+        })
         .on("mouseover", (event, d: BarDatum) => {
           const strokeColor = d3.select(event.currentTarget).attr("stroke");
           d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
+          d3.selectAll(`.duration-label[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
         })
         .on("mouseout", (event, d: BarDatum) => {
           d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", taskFmt.fontColor.value.value);
+          d3.selectAll(`.duration-label[data-rowKey="${d.rowKey}"]`).attr("fill", this.fmtSettings.barCard.labelGroup.fontColor.value.value);
+        })
+        .on("click", (event, d: BarDatum) => {
+          this.selectionManager.select(d.selectionId, true).then((ids: ISelectionId[]) => {
+            this.selectedIds = ids;
+            this.update(this.lastOptions);
+          });
+          event.stopPropagation();
+        })
+        .on("contextmenu", (event, d: BarDatum) => {
+          this.selectionManager.showContextMenu(d.selectionId, {
+            x: event.clientX,
+            y: event.clientY
+          });
+          event.preventDefault();
         });
 
       // === PADRES (grupos) ===
-      // === PADRES (grupos) ===
-      bars.filter(d =>
-        d.isGroup &&
-        d.start instanceof Date && !isNaN(d.start.getTime()) &&
-        d.end instanceof Date && !isNaN(d.end.getTime())
-      )
+      bars.filter(d => d.isGroup)
         .attr("d", d => this.getGroupBarPath(x, yScale, d, taskFmt.taskHeight.value, this.barH))
         .attr("fill", d => `url(#${d.gradientId})`)
         .attr("stroke", d => {
@@ -1367,16 +1412,32 @@ if (extraColCount > 0) {
           return dp?.color ?? "#72c0ffff";
         })
         .attr("stroke-width", 1)
+        .style("pointer-events", "all")
         .on("mouseover", (event, d: BarDatum) => {
           const strokeColor = d3.select(event.currentTarget).attr("stroke");
-          // 🔑 esto pinta SOLO el texto del padre
           d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
         })
         .on("mouseout", (event, d: BarDatum) => {
           d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", parFmt.fontColor.value.value);
         });
 
+      // === Opacidades según selección y highlights ===
+      const highlightColumn = dv.categorical.values.find(val => val.highlights);
 
+      if (highlightColumn && highlightColumn.highlights) {
+        const highlights = highlightColumn.highlights;
+        bars.attr("opacity", d =>
+          highlights[d.index] != null ? 1 : 0.3
+        );
+      } else if (this.selectedIds.length > 0) {
+        bars.attr("opacity", d =>
+          this.selectedIds.some(sel => sel.getKey() === d.selectionId.getKey()) ? 1 : 0.3
+        );
+      } else {
+        bars.attr("opacity", 1);
+      }
+
+      // === COMPLETION BARS ===
       this.ganttG.selectAll<SVGRectElement, BarDatum>(".completion-bar")
         .data(allBars.filter(d =>
           !d.isGroup &&
@@ -1412,6 +1473,7 @@ if (extraColCount > 0) {
         .attr("rx", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
         .attr("ry", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value);
 
+      // === BARRAS SECUNDARIAS ===
       this.ganttG
         .selectAll(".bar-secondary")
         .data(allBars.filter(d =>
@@ -1422,28 +1484,23 @@ if (extraColCount > 0) {
         ))
         .join("rect")
         .attr("class", "bar-secondary")
-        .attr("x", d => {
-          const xVal = x(d.secondaryStart!);
-          return xVal;
-        })
-        .attr("y", d => {
-          const yVal = yScale(d.rowKey)! + yOff + this.barH / 2 - (d.isGroup ? 4 : 3);
-          return yVal;
-        })
+        .attr("x", d => x(d.secondaryStart!))
+        .attr("y", d => yScale(d.rowKey)! + yOff + this.barH / 2 - (d.isGroup ? 4 : 3))
         .attr("width", d => {
-          const w = Math.max(0, x(d.secondaryEnd!) - x(d.secondaryStart!));
+          const xStart = x(d.secondaryStart!);
+          const xEnd = x(d.secondaryEnd!);
+          const w = Math.max(0, xEnd - xStart);
           return w;
         })
-        .attr("height", d => {
-          const h = d.isGroup ? 5 : 6;
-          return h;
-        })
-        .attr("fill", d => {
-          const color = d.isGroup ? "#d35400" : "#e67e22";
-          return color;
-        })
-        .attr("rx", 2);
+        .attr("height", d => d.isGroup ? 5 : 6)
+        .attr("fill", d => d.isGroup ? "#d35400" : "#e67e22")
+        .attr("rx", 2)
+        .on("mouseover", (event, d: BarDatum) => {
+          const key = d.rowKey.startsWith("G:") ? d.rowKey.slice(2) : d.rowKey;
+        });
 
+
+      // === LÍNEA Y TEXTO DE HOY ===
       const today = new Date();
       this.ganttG
         .selectAll(".today-line")
@@ -1458,20 +1515,20 @@ if (extraColCount > 0) {
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "4,2");
 
-      // Texto vertical "Hoy"
       this.ganttG
         .selectAll(".today-label")
         .data([today])
         .join("text")
         .attr("class", "today-label")
-        .text("Hoy") // o "Today"
-        .attr("x", d => x(d) + 5) // desplazamiento horizontal para no solaparse con la línea
-        .attr("y", 10)            // posición vertical inicial
+        .text("Hoy")
+        .attr("x", d => x(d) + 5)
+        .attr("y", 10)
         .attr("font-size", 15)
         .attr("fill", this.fmtSettings.timeMarkerCard.todayGroup.fontColor.value.value)
-        .attr("writing-mode", "vertical-rl")  // texto vertical
+        .attr("writing-mode", "vertical-rl")
         .attr("text-anchor", "start");
 
+      // === COMPLETION LABELS ===
       this.ganttG.selectAll<SVGTextElement, BarDatum>(".completion-label")
         .data(allBars.filter(d =>
           !d.isGroup &&
@@ -1505,7 +1562,7 @@ if (extraColCount > 0) {
         .attr("text-anchor", "start")
         .attr("dominant-baseline", "middle");
 
-      // BARRA DE GRUPO
+      // === BARRA DE GRUPO ===
       bars.filter(d =>
         d.isGroup &&
         d.start instanceof Date &&
@@ -1522,6 +1579,7 @@ if (extraColCount > 0) {
         })
         .attr("stroke-width", 1);
 
+      // === LABELS DE DURACIÓN ===
       renderDurationLabels({
         svg: this.ganttG,
         bars: allBars,
@@ -1537,44 +1595,54 @@ if (extraColCount > 0) {
         underline: this.fmtSettings.barCard.labelGroup.underline.value
       });
 
-      const tooltipValues = dv.categorical.values.filter(val => val.source.roles && val.source.roles['tooltips']);
-
-      const tooltipTargets = this.ganttG.selectAll<SVGRectElement, BarDatum>(".bar, .bar-secondary");
+      // === TOOLTIP ===
+      const tooltipTargets = this.ganttG.selectAll<SVGElement, BarDatum>(
+        ".bar, .bar-secondary, .bar-group"
+      );
 
       this.tooltipServiceWrapper.addTooltip<BarDatum>(
         tooltipTargets,
         (d: BarDatum) => {
-          let taskName = "";
-          let parentName = "";
+          const tooltipItems: { displayName: string; value: string }[] = [];
 
           if (d.isGroup) {
-            parentName = (d.rowKey || "").replace(/^G:/, "");
+            // 🔹 Grupo (padre)
+            const cleanKey = d.rowKey.replace(/^G:/, "");
+            const range = this.groupRange.get(cleanKey);
+
+            tooltipItems.push(
+              { displayName: this.parentName, value: cleanKey },
+              { displayName: this.startName, value: range?.start ? d3.timeFormat("%d/%m/%Y %H:%M")(range.start) : "" },
+              { displayName: this.endName, value: range?.end ? d3.timeFormat("%d/%m/%Y %H:%M")(range.end) : "" }
+            );
+
+            if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
+              tooltipItems.push(
+                { displayName: this.secondaryStartName, value: range?.secondaryStart ? d3.timeFormat("%d/%m/%Y %H:%M")(range.secondaryStart) : "" },
+                { displayName: this.secondaryEndName, value: range?.secondaryEnd ? d3.timeFormat("%d/%m/%Y %H:%M")(range.secondaryEnd) : "" }
+              );
+            }
+
           } else {
+            // 🔹 Tarea (hijo)
             const [taskRaw, parentRaw] = (d.rowKey || "").split("|");
-            taskName = (taskRaw || "").replace(/^T:/, "").replace(/^G:/, "");
-            parentName = (parentRaw || "").replace(/^T:/, "").replace(/^G:/, "");
+            const taskName = (taskRaw || "").replace(/^T:/, "");
+            const parentName = (parentRaw || "").replace(/^G:/, "");
+
+            tooltipItems.push(
+              { displayName: "Parent", value: parentName },
+              { displayName: "Task", value: taskName },
+              { displayName: this.startName, value: d.start ? d3.timeFormat("%d/%m/%Y %H:%M")(d.start) : "" },
+              { displayName: this.endName, value: d.end ? d3.timeFormat("%d/%m/%Y %H:%M")(d.end) : "" }
+            );
+
+            if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
+              tooltipItems.push(
+                { displayName: this.secondaryStartName, value: d.secondaryStart ? d3.timeFormat("%d/%m/%Y %H:%M")(d.secondaryStart) : "" },
+                { displayName: this.secondaryEndName, value: d.secondaryEnd ? d3.timeFormat("%d/%m/%Y %H:%M")(d.secondaryEnd) : "" }
+              );
+            }
           }
-
-          const tooltipItems: { displayName: string; value: string }[] = [
-            { displayName: "Parent", value: parentName },
-            ...(taskName ? [{ displayName: "Task", value: taskName }] : []),
-            { displayName: "Inicio P", value: d.start.toLocaleString() },
-            { displayName: "Fin P", value: d.end.toLocaleString() },
-          ];
-
-          const c = Number(d.completion);
-          if (Number.isFinite(c) && c !== 0) {
-            const pct = c > 1 ? c : c * 100;
-            tooltipItems.push({ displayName: "Completado", value: `${Math.round(pct)}%` });
-          }
-
-          tooltipValues.forEach(val => {
-            const v = val.values[d.index];
-            tooltipItems.push({
-              displayName: val.source.displayName,
-              value: (v !== undefined && v !== null) ? String(v) : ""
-            });
-          });
 
           return tooltipItems;
         },
@@ -1610,9 +1678,9 @@ if (extraColCount > 0) {
 
         const midX = (x1 + x2) / 2;
         return `M${x1},${y1} 
-            L${midX},${y1} 
-            L${midX},${y2} 
-            L${x2},${y2}`;
+              L${midX},${y1} 
+              L${midX},${y2} 
+              L${x2},${y2}`;
       })
       .attr("fill", "none")
       .attr("stroke", "#afafafff")
@@ -1654,8 +1722,6 @@ if (extraColCount > 0) {
       if (savedScrollTop !== undefined) {
         this.ganttDiv.node()!.scrollTop = savedScrollTop;
         this.ganttDiv.node()!.scrollLeft = savedScrollLeft ?? 0;
-
-        // 👇 forzar que el eje Y arranque alineado
         this.leftG.select<SVGGElement>(".y-content")
           .attr("transform", `translate(0, ${60 - savedScrollTop})`);
       }
@@ -1701,119 +1767,117 @@ if (extraColCount > 0) {
   }
 
   private parseData(dv: DataView): Task[] {
-  if (!dv.categorical?.categories?.length) return [];
-  const cat = dv.categorical;
+    if (!dv.categorical?.categories?.length) return [];
+    const cat = dv.categorical;
 
-  // === valores estándar ===
-  const sVal = cat.values.find(v => v.source.roles?.startDate);
-  const eVal = cat.values.find(v => v.source.roles?.endDate);
-  const durVal = cat.values.find(v => v.source.roles?.duration);
-  const compVal = cat.values.find(v => v.source.roles?.completion);
-  const secStartVal = cat.values.find(v => v.source.roles?.secondaryStart);
-  const secEndVal = cat.values.find(v => v.source.roles?.secondaryEnd);
+    // === valores estándar ===
+    const sVal = cat.values.find(v => v.source.roles?.startDate);
+    const eVal = cat.values.find(v => v.source.roles?.endDate);
+    const durVal = cat.values.find(v => v.source.roles?.duration);
+    const compVal = cat.values.find(v => v.source.roles?.completion);
+    const secStartVal = cat.values.find(v => v.source.roles?.secondaryStart);
+    const secEndVal = cat.values.find(v => v.source.roles?.secondaryEnd);
 
-  // 👉 guardamos nombres para usarlos en el header
-  this.secondaryStartName = secStartVal?.source.displayName ?? "Inicio R";
-  this.secondaryEndName = secEndVal?.source.displayName ?? "Fin R";
+    this.secondaryStartName = secStartVal?.source.displayName ?? "Secondary Start Date";
+    this.secondaryEndName = secEndVal?.source.displayName ?? "Secondary End Date";
+    this.startName = sVal?.source.displayName ?? "Start Date";
+    this.endName = eVal?.source.displayName ?? "End Date";
 
-  // === Columns: medidas y categorías ===
-  const colVals = cat.values.filter(v => v.source.roles?.columns); // medidas
-  const colCatVals: { name: string; values: any[] }[] = [];        // categorías
-  cat.categories.forEach(c => {
-    if (c.source.roles?.columns) {
-      colCatVals.push({ name: c.source.displayName, values: c.values });
-    }
-  });
+    const parentCol = cat.categories.find(c => c.source.roles?.parent);
+    this.parentName = parentCol?.source.displayName ?? "Parent";
 
-  // 👉 nombres de columnas dinámicos (si no hay nada, igual inicializamos)
-  this.extraColNames = [
-    ...colVals.map(c => c.source.displayName),
-    ...colCatVals.map(c => c.name)
-  ];
+    // === Columns: medidas y categorías ===
+    const colVals = cat.values.filter(v => v.source.roles?.columns);
+    const colCatVals: { name: string; values: any[] }[] = [];
+    cat.categories.forEach(c => {
+      if (c.source.roles?.columns) {
+        colCatVals.push({ name: c.source.displayName, values: c.values });
+      }
+    });
 
-  const taskCols: { name: string; values: any[] }[] = [];
-  const parentCols: { values: any[] }[] = [];
-
-  let predCol: any[] | undefined;
-
-  cat.categories.forEach(c => {
-    const r = c.source.roles;
-    if (r?.task) taskCols.push({ name: c.source.displayName, values: c.values });
-    if (r?.parent) parentCols.push({ values: c.values });
-    if (r?.predecessor) predCol = c.values;
-  });
-
-  this.taskColCount = taskCols.length;
-  this.taskColNames = taskCols.map(c => c.name);
-
-  const out: Task[] = [];
-  const rowCount = sVal?.values?.length ?? 0;
-
-  for (let i = 0; i < rowCount; i++) {
-    const taskFields = taskCols.map(c => String(c.values[i] ?? ""));
-    const parentTxt = parentCols.map(c => String(c.values[i] ?? "")).join(" | ") || "Sin grupo";
-
-    const rawStart = sVal?.values?.[i];
-    const rawEnd = eVal?.values?.[i];
-
-    const start = rawStart ? new Date(rawStart as string) : null;
-    const end = rawEnd ? new Date(rawEnd as string) : null;
-
-    const isStartValid = start instanceof Date && !isNaN(start.getTime());
-    const isEndValid = end instanceof Date && !isNaN(end.getTime());
-
-    const duration = durVal ? Number(durVal.values?.[i]) : undefined;
-    const fieldsWithDuration = durVal ? [...taskFields, duration?.toString() ?? ""] : taskFields;
-
-    let predecessor: string | undefined;
-    if (predCol) {
-      const rawPred = String(predCol[i] ?? "").trim();
-      if (rawPred !== "") predecessor = rawPred;
-    }
-
-    const secStart =
-      typeof secStartVal?.values?.[i] === "string" || typeof secStartVal?.values?.[i] === "number"
-        ? new Date(secStartVal.values[i] as string | number)
-        : undefined;
-
-    const secEnd =
-      typeof secEndVal?.values?.[i] === "string" || typeof secEndVal?.values?.[i] === "number"
-        ? new Date(secEndVal.values[i] as string | number)
-        : undefined;
-
-    // 🔹 capturamos valores de Columns (medidas + categorías)
-    const extraCols = [
-      ...colVals.map(c => String(c.values[i] ?? "")),   // medidas
-      ...colCatVals.map(c => String(c.values[i] ?? "")) // categorías
+    this.extraColNames = [
+      ...colVals.map(c => c.source.displayName),
+      ...colCatVals.map(c => c.name)
     ];
 
-    // 👇 fallback: si está vacío, igual rellenamos con strings vacíos
-    const paddedExtraCols =
-      extraCols.length === this.extraColNames.length
-        ? extraCols
-        : Array(this.extraColNames.length).fill("");
+    const taskCols: { name: string; values: any[] }[] = [];
+    const parentCols: { values: any[] }[] = [];
 
-    console.log("Row:", i, "TaskID:", taskFields.join(" | "), "Columns:", paddedExtraCols);
+    let predCol: any[] | undefined;
 
-    const task: Task = {
-      id: taskFields.join(" | "),
-      parent: parentTxt,
-      start: isStartValid ? start! : null,
-      end: isEndValid ? end! : null,
-      fields: fieldsWithDuration,
-      completion: compVal ? Number(compVal.values?.[i]) : undefined,
-      secondaryStart: secStart,
-      secondaryEnd: secEnd,
-      predecessor,
-      index: i,
-      extraCols: paddedExtraCols
-    };
+    cat.categories.forEach(c => {
+      const r = c.source.roles;
+      if (r?.task) taskCols.push({ name: c.source.displayName, values: c.values });
+      if (r?.parent) parentCols.push({ values: c.values });
+      if (r?.predecessor) predCol = c.values;
+    });
 
-    out.push(task);
+    this.taskColCount = taskCols.length;
+    this.taskColNames = taskCols.map(c => c.name);
+
+    const out: Task[] = [];
+    const rowCount = sVal?.values?.length ?? 0;
+
+    for (let i = 0; i < rowCount; i++) {
+      const taskFields = taskCols.map(c => String(c.values[i] ?? ""));
+      const parentTxt = parentCols.map(c => String(c.values[i] ?? "")).join(" | ") || "Parent";
+
+      const rawStart = sVal?.values?.[i];
+      const rawEnd = eVal?.values?.[i];
+
+      const start = rawStart ? new Date(rawStart as string) : null;
+      const end = rawEnd ? new Date(rawEnd as string) : null;
+
+      const isStartValid = start instanceof Date && !isNaN(start.getTime());
+      const isEndValid = end instanceof Date && !isNaN(end.getTime());
+
+      const duration = durVal ? Number(durVal.values?.[i]) : undefined;
+      const fieldsWithDuration = durVal ? [...taskFields, duration?.toString() ?? ""] : taskFields;
+
+      let predecessor: string | undefined;
+      if (predCol) {
+        const rawPred = String(predCol[i] ?? "").trim();
+        if (rawPred !== "") predecessor = rawPred;
+      }
+
+      const secStart =
+        typeof secStartVal?.values?.[i] === "string" || typeof secStartVal?.values?.[i] === "number"
+          ? new Date(secStartVal.values[i] as string | number)
+          : undefined;
+
+      const secEnd =
+        typeof secEndVal?.values?.[i] === "string" || typeof secEndVal?.values?.[i] === "number"
+          ? new Date(secEndVal.values[i] as string | number)
+          : undefined;
+
+      const extraCols = [
+        ...colVals.map(c => String(c.values[i] ?? "")),   // medidas
+        ...colCatVals.map(c => String(c.values[i] ?? "")) // categorías
+      ];
+      const paddedExtraCols =
+        extraCols.length === this.extraColNames.length
+          ? extraCols
+          : Array(this.extraColNames.length).fill("");
+
+      const task: Task = {
+        id: taskFields.join(" | "),
+        parent: parentTxt,
+        start: isStartValid ? start! : null,
+        end: isEndValid ? end! : null,
+        fields: fieldsWithDuration,
+        completion: compVal ? Number(compVal.values?.[i]) : undefined,
+        secondaryStart: secStart,
+        secondaryEnd: secEnd,
+        predecessor,
+        index: i,
+        extraCols: paddedExtraCols
+      };
+
+      out.push(task);
+    }
+
+    return out;
   }
-
-  return out;
-}
 
 
   private buildRows(tasks: Task[], cache: Map<string, boolean>) {
@@ -2040,9 +2104,9 @@ if (extraColCount > 0) {
         const midX = (x1 + x2) / 2;
 
         return `M${x1},${y1} 
-            L${midX},${y1} 
-            L${midX},${y2} 
-            L${x2},${y2}`;
+              L${midX},${y1} 
+              L${midX},${y2} 
+              L${x2},${y2}`;
       });
 
     this.ganttG
@@ -2085,17 +2149,13 @@ if (extraColCount > 0) {
     const [minDate, maxDate] = this.xOriginal.domain();
     switch (fmt) {
       case "Hora":
-        // Mostrar solo la primera jornada
         return [minDate, d3.timeDay.offset(minDate, 1)];
       case "Día":
-        // Mostrar un mes desde minDate
         return [minDate, d3.timeMonth.offset(minDate, 1)];
       case "Mes":
-        // Mostrar un año desde minDate
         return [minDate, d3.timeYear.offset(minDate, 1)];
       case "Año":
       default:
-        // Todo el rango
         return [minDate, maxDate];
     }
   }
@@ -2109,18 +2169,16 @@ if (extraColCount > 0) {
 
     if (this.currentZoomTransform) {
       const oldX = this.currentZoomTransform.rescaleX(this.xOriginal);
-      const [oldMin] = oldX.domain();  // borde izquierdo actual
-
-      // 🔍 buscar la primera tarea que esté visible en pantalla
+      const [oldMin] = oldX.domain();
       const visibleTask = this.cacheTasks
         .filter(t => t.start && t.end)
         .sort((a, b) => +a.start! - +b.start!)
         .find(t => t.start! >= oldMin);
 
       if (visibleTask) {
-        barStart = this.xOriginal(visibleTask.start!); // 👈 inicio de esa barra
+        barStart = this.xOriginal(visibleTask.start!);
       } else {
-        barStart = this.xOriginal(oldMin); // fallback si no encuentra
+        barStart = this.xOriginal(oldMin);
       }
     } else {
       const firstTask = this.cacheTasks.find(t => t.start && t.end);
@@ -2128,7 +2186,6 @@ if (extraColCount > 0) {
       barStart = this.xOriginal(firstTask.start!);
     }
 
-    // 🔹 mantener tu lógica original de translateX
     const translateX = (this.marginLeft - this.marginLeft) - barStart * scale + 10;
 
     const t = d3.zoomIdentity
@@ -2138,11 +2195,7 @@ if (extraColCount > 0) {
     this.ganttSVG.call(this.zoomBehavior.transform, t);
   }
 
-
-
-
   private updateFormatButtonsUI(fmt: FormatType) {
-    // solo marcar cuál está activo
     const buttons = this.rightBtns.selectAll("button");
     buttons.classed("active", d => d === fmt);
   }

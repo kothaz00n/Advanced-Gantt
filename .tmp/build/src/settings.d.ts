@@ -127,18 +127,6 @@ declare class completionCardSettings extends SimpleCard {
     font: FontControl;
     slices: formattingSettings.Slice[];
 }
-declare class adminSettings extends SimpleCard {
-    Alto: formattingSettings.NumUpDown;
-    Ancho: formattingSettings.NumUpDown;
-    Pad: formattingSettings.NumUpDown;
-    mTop: formattingSettings.NumUpDown;
-    mBottom: formattingSettings.NumUpDown;
-    mLeft: formattingSettings.NumUpDown;
-    mRight: formattingSettings.NumUpDown;
-    name: string;
-    displayName: string;
-    slices: formattingSettings.Slice[];
-}
 export declare class VisualFormattingSettingsModel extends Model {
     axisYCard: AxisYCardSettings;
     axisXCard: AxisXCardSettings;
@@ -146,7 +134,6 @@ export declare class VisualFormattingSettingsModel extends Model {
     headerCard: HeaderCardSettings;
     taskCard: TaskCardSetting;
     parentCard: ParentCardSetting;
-    adminCard: adminSettings;
     colorSelector: ColorSelectorCardSettings;
     weekendCard: WeekendCardSettings;
     completionCard: completionCardSettings;

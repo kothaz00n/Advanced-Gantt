@@ -37,7 +37,7 @@ export function renderDurationLabels(opts: LabelOptions) {
 
   const formatDuration = (start: Date, end: Date, label: string) => {
     const ms = end.getTime() - start.getTime();
-    const minutes = Math.floor(ms / 60_000);
+    const minutes = Math.floor(ms / 60_000);  
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
     const remHours = hours % 24;
@@ -65,6 +65,7 @@ export function renderDurationLabels(opts: LabelOptions) {
     .join("text")
     .attr("class", "duration-label")
     .text(d => formatDuration(d.start, d.end, d.id))
+    .attr("data-rowKey", d => d.rowKey)
     .attr("x", d => {
       const endX = x(d.end);
       return isNaN(endX) ? -9999 : endX + 4;

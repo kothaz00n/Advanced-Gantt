@@ -3,7 +3,7 @@ import powerbi from "powerbi-visuals-api";
 import IVisual = powerbi.extensibility.IVisual;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
-import ISelectionID = powerbi.visuals.ISelectionId;
+import ISelectionId = powerbi.visuals.ISelectionId;
 export interface BarDatum {
     id: string;
     start: Date;
@@ -14,7 +14,7 @@ export interface BarDatum {
     completion?: number;
     secondaryStart?: Date;
     secondaryEnd?: Date;
-    selectionId: ISelectionID;
+    selectionId: ISelectionId;
 }
 export interface GanttDataPoint {
     task: string;
@@ -22,7 +22,7 @@ export interface GanttDataPoint {
     startDate: Date;
     endDate: Date;
     color: string;
-    selectionId: ISelectionID;
+    selectionId: ISelectionId;
     index: number;
     completion?: number;
     secondaryStart?: Date;
@@ -70,6 +70,12 @@ export declare class Visual implements IVisual {
     private extraColNames;
     private secondaryStartName;
     private secondaryEndName;
+    private selectionManager;
+    private selectionIdMap;
+    private selectedIds;
+    private startName;
+    private endName;
+    private parentName;
     private computeInnerW;
     private getGroupBarPath;
     private getCompletionByGroup;
