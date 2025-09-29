@@ -1218,15 +1218,19 @@ export class Visual implements IVisual {
 
     const groupBars: BarDatum[] = visibleRows
       .filter(r => r.isGroup)
-      .map((r, i) => {
+      .map(r => {
         const range = this.groupRange.get(r.id)!;
+
+        // 🔹 Buscar índice real del padre en la categoría
+        const parentIndex = parentCategory.values.findIndex(v => `${v}` === r.id);
+
         return {
           id: r.id,
           start: range.start,
           end: range.end,
           rowKey: r.rowKey,
           isGroup: true,
-          index: i,
+          index: parentIndex,
           completion: this.getCompletionByGroup(
             r.rowKey,
             this.cacheTasks.map((t, j) => ({
@@ -1244,11 +1248,12 @@ export class Visual implements IVisual {
           ),
           secondaryStart: range.secondaryStart ? new Date(range.secondaryStart) : undefined,
           secondaryEnd: range.secondaryEnd ? new Date(range.secondaryEnd) : undefined,
-          selectionId: this.host.createSelectionIdBuilder()
-            .withCategory(parentCategory, i)
-            .createSelectionId() as ISelectionId
+
+          // ❌ Sacamos el selectionId en los grupos para evitar conflicto con hijos
+          selectionId: undefined as any
         };
       });
+
 
     const allBars = [...taskBars, ...groupBars].map((bar, i) => ({
       ...bar,
@@ -1606,12 +1611,10 @@ export class Visual implements IVisual {
           const tooltipItems: { displayName: string; value: string }[] = [];
 
           if (d.isGroup) {
-            // 🔹 Grupo (padre)
-            const cleanKey = d.rowKey.replace(/^G:/, "");
-            const range = this.groupRange.get(cleanKey);
+            const range = this.groupRange.get(d.id); // 🔹 usar d.id directo
 
             tooltipItems.push(
-              { displayName: this.parentName, value: cleanKey },
+              { displayName: this.parentName, value: d.id },
               { displayName: this.startName, value: range?.start ? d3.timeFormat("%d/%m/%Y %H:%M")(range.start) : "" },
               { displayName: this.endName, value: range?.end ? d3.timeFormat("%d/%m/%Y %H:%M")(range.end) : "" }
             );
@@ -1622,15 +1625,14 @@ export class Visual implements IVisual {
                 { displayName: this.secondaryEndName, value: range?.secondaryEnd ? d3.timeFormat("%d/%m/%Y %H:%M")(range.secondaryEnd) : "" }
               );
             }
-
           } else {
             // 🔹 Tarea (hijo)
-            const [taskRaw, parentRaw] = (d.rowKey || "").split("|");
+            const [taskRaw, parentRaw] = (d.rowKey || "").split("|", 2);
             const taskName = (taskRaw || "").replace(/^T:/, "");
             const parentName = (parentRaw || "").replace(/^G:/, "");
 
             tooltipItems.push(
-              { displayName: "Parent", value: parentName },
+              { displayName: this.parentName, value: parentName },
               { displayName: "Task", value: taskName },
               { displayName: this.startName, value: d.start ? d3.timeFormat("%d/%m/%Y %H:%M")(d.start) : "" },
               { displayName: this.endName, value: d.end ? d3.timeFormat("%d/%m/%Y %H:%M")(d.end) : "" }
@@ -1735,29 +1737,103 @@ export class Visual implements IVisual {
 
   private renderLanding(width: number, height: number) {
     this.landingG.attr("display", null).selectAll("*").remove();
+
+    const bg = this.landingG.append("defs")
+      .append("linearGradient")
+      .attr("id", "landing-bg")
+      .attr("x1", "0%").attr("y1", "0%")
+      .attr("x2", "0%").attr("y2", "100%");
+    bg.append("stop").attr("offset", "0%").attr("stop-color", "#fdfdfd");
+    bg.append("stop").attr("offset", "100%").attr("stop-color", "#f0f0f5");
+
     this.landingG.append("rect")
       .attr("width", width)
       .attr("height", height)
-      .attr("fill", "#F3F3F3");
-
-    const img = 250;
-    this.landingG.append("image")
-      .attr("href", ypfBg)
-      .attr("xlink:href", ypfBg)
-      .attr("width", img)
-      .attr("height", img)
-      .attr("x", width / 2 - img / 2)
-      .attr("y", height / 2 - img / 2 - 30)
-      .attr("preserveAspectRatio", "xMidYMid meet");
+      .attr("fill", "url(#landing-bg)");
 
     this.landingG.append("text")
-      .text("Dev by Nico Pastorini with ❤️ for YPF")
+      .text("📊 Gantt Visual – Guía rápida")
       .attr("x", width / 2)
-      .attr("y", height / 2 + img / 2)
+      .attr("y", 50)
       .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "hanging")
-      .attr("fill", "#666")
-      .attr("font-size", 18)
+      .attr("fill", "#2c3e50")
+      .attr("font-size", 26)
+      .attr("font-family", "Segoe UI")
+      .attr("font-weight", "bold");
+
+    const sections: { title: string; items: string[] }[] = [
+      {
+        title: "Campos obligatorios",
+        items: [
+          "📝 Task (Texto) → Nombre de la tarea",
+          "📂 Parent (Texto) → Agrupador o categoría",
+          "⏳ Start Date (Fecha) → Inicio",
+          "🏁 End Date (Fecha) → Fin"
+        ]
+      },
+      {
+        title: "Opcionales",
+        items: [
+          "🔄 Secondary Start/End (Fecha) → Intervalo extra",
+          "📏 Duration (Número) → Días/horas",
+          "🔗 Predecessor (Texto/Número) → Dependencias",
+          "✅ Completion (Número %) → Avance de la tarea"
+        ]
+      },
+      {
+        title: "Extras",
+        items: [
+          "➕ Columns (Texto/Número) → Campos adicionales",
+          "💡 Tooltips (Cualquier tipo) → Info al pasar el mouse"
+        ]
+      }
+    ];
+
+    let y = 100;
+    const lineHeight = 24;
+
+    sections.forEach(section => {
+      this.landingG.append("text")
+        .text(section.title)
+        .attr("x", 40)
+        .attr("y", y)
+        .attr("fill", "#34495e")
+        .attr("font-size", 18)
+        .attr("font-family", "Segoe UI")
+        .attr("font-weight", "bold");
+      y += lineHeight;
+
+      section.items.forEach(item => {
+        this.landingG.append("text")
+          .text(item)
+          .attr("x", 60)
+          .attr("y", y)
+          .attr("fill", "#555")
+          .attr("font-size", 15)
+          .attr("font-family", "Segoe UI");
+        y += lineHeight;
+      });
+
+      y += 10;
+    });
+
+    this.landingG.append("text")
+      .text("💡 Tip: Arrastrá y soltá campos en el panel de Power BI")
+      .attr("x", width / 2)
+      .attr("y", height - 55)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#888")
+      .attr("font-size", 14)
+      .attr("font-family", "Segoe UI")
+      .attr("font-style", "italic");
+
+    this.landingG.append("text")
+      .text("📧 Contacto: nicolas.pastorini@set.ypf.com")
+      .attr("x", width / 2)
+      .attr("y", height - 30)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#2c3e50")
+      .attr("font-size", 15)
       .attr("font-family", "Segoe UI")
       .attr("font-weight", "bold");
   }
