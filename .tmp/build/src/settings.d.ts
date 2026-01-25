@@ -9,6 +9,11 @@ declare class ColorSelectorCardSettings extends SimpleCard {
     displayName?: string;
     slices: Slice[];
 }
+declare class LegendColorSelectorCardSettings extends SimpleCard {
+    name: string;
+    displayName?: string;
+    slices: Slice[];
+}
 declare class AxisYCardSettings extends SimpleCard {
     name: string;
     displayName: string;
@@ -18,6 +23,18 @@ declare class AxisYCardSettings extends SimpleCard {
     tickColor: ColorPicker;
     labelDisplayUnits: NumUpDown;
     slices: FormattingSettingsSlice[];
+}
+declare class LegendCardSettings extends formattingSettings.SimpleCard {
+    show: formattingSettings.ToggleSwitch;
+    position: formattingSettings.ItemDropdown;
+    fontSize: formattingSettings.NumUpDown;
+    fontColor: formattingSettings.ColorPicker;
+    backgroundColor: formattingSettings.ColorPicker;
+    showTitle: formattingSettings.ToggleSwitch;
+    titleText: formattingSettings.TextInput;
+    name: string;
+    displayName: string;
+    slices: (formattingSettings.NumUpDown | formattingSettings.ToggleSwitch | formattingSettings.ColorPicker | formattingSettings.ItemDropdown | formattingSettings.TextInput)[];
 }
 declare class AxisXCardSettings extends SimpleCard {
     name: string;
@@ -58,6 +75,16 @@ declare class TodayMarkerStyleGroup extends SimpleCard {
     font: FontControl;
     markColor: formattingSettings.ColorPicker;
     slices: formattingSettings.Slice[];
+}
+declare class labelCardSettings extends SimpleCard {
+    show: formattingSettings.ToggleSwitch;
+    fontColor: formattingSettings.ColorPicker;
+    backgroundColor: formattingSettings.ColorPicker;
+    fontSize: formattingSettings.NumUpDown;
+    fontFamily: formattingSettings.FontPicker;
+    name: string;
+    displayName: string;
+    slices: FormattingSettingsSlice[];
 }
 declare class BarCardSettings extends CompositeCard {
     name: string;
@@ -135,10 +162,14 @@ export declare class VisualFormattingSettingsModel extends Model {
     taskCard: TaskCardSetting;
     parentCard: ParentCardSetting;
     colorSelector: ColorSelectorCardSettings;
+    legendColorSelector: LegendColorSelectorCardSettings;
     weekendCard: WeekendCardSettings;
     completionCard: completionCardSettings;
     timeMarkerCard: TimeMarkerCardSettings;
+    legend: LegendCardSettings;
+    labelCard: labelCardSettings;
     cards: Card[];
     populateColorSelector(dataPoints: GanttDataPoint[]): void;
+    populateLegendColorSelector(dataPoints: any[]): void;
 }
 export {};

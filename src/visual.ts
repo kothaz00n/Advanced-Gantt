@@ -3,7 +3,6 @@
 import "./../style/visual.less";
 import * as d3 from "d3";
 import powerbi from "powerbi-visuals-api";
-import powerbiVisualsApi from "powerbi-visuals-api";
 import { renderDurationLabels } from "./utils/renderLabels";
 import { renderFormatButtons } from "./components/formatButtons";
 import { renderParentToggleButtons } from "./components/parentButtons";
@@ -11,8 +10,8 @@ import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel
 import { VisualFormattingSettingsModel } from "./settings";
 import { formattingSettings } from "powerbi-visuals-utils-formattingmodel";
 import { createTooltipServiceWrapper, ITooltipServiceWrapper } from "powerbi-visuals-utils-tooltiputils";
-import ypfBg from "../assets/ypf_background.svg";
 import { dataViewObjects } from "powerbi-visuals-utils-dataviewutils";
+import { legend } from "powerbi-visuals-utils-chartutils";
 import { renderXAxisBottom } from "./components/xAxis/renderXAxisBottom";
 import { renderXAxisTop } from "./components/xAxis/renderXAxisTop";
 // powerbi.visuals
@@ -41,6 +40,7 @@ interface Task {
   predecessor?: string;
   index: number;
   extraCols?: string[];
+  legend?: string;
 }
 
 interface VisualRow {
@@ -53,11 +53,6 @@ interface VisualRow {
   extraCols?: string[];
 }
 
-interface References {
-  cardUid?: string;
-  groupUid?: string;
-  fill?: FormattingId;
-}
 export interface BarDatum {
   id: string;
   start: Date;
@@ -69,12 +64,8 @@ export interface BarDatum {
   secondaryStart?: Date;
   secondaryEnd?: Date;
   selectionId: ISelectionId;
+  legend?: string;
 }
-
-const enum GanttObjectNames {
-  ColorSelector = "colorSelector"
-}
-
 
 export interface GanttDataPoint {
   task: string;
@@ -89,29 +80,36 @@ export interface GanttDataPoint {
   secondaryEnd?: Date;
 }
 
+interface LegendDataPoint {
+  legend: string;
+  color: string;
+  selectionId: ISelectionId;
+  index: number;
+}
+
 function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHost): GanttDataPoint[] {
   const dataPoints: GanttDataPoint[] = [];
   const dataViews = options.dataViews;
 
-  if (!dataViews
-    || !dataViews[0]
-    || !dataViews[0].categorical
-    || !dataViews[0].categorical.categories
-    || !dataViews[0].categorical.categories[1]?.values
-    || !dataViews[0].categorical.values
-  ) {
+  if (!dataViews || !dataViews[0] || !dataViews[0].categorical ||
+    !dataViews[0].categorical.categories || !dataViews[0].categorical.categories[1]?.values ||
+    !dataViews[0].categorical.values) {
     return dataPoints;
   }
 
   const categorical = dataViews[0].categorical;
   const parent = categorical.categories[1];
-
   const colorPalette: ISandboxExtendedColorPalette = host.colorPalette;
 
-  const uniqueParents = [...new Set(parent.values.map(v => `${v}`))];
+  const parentIndexMap = new Map<string, number>();
+  parent.values.forEach((value, index) => {
+    const key = `${value}`;
+    if (!parentIndexMap.has(key)) {
+      parentIndexMap.set(key, index);
+    }
+  });
 
-  uniqueParents.forEach((value, i) => {
-    const index = parent.values.findIndex(v => `${v}` === value);
+  parentIndexMap.forEach((index, value) => {
     const selectionId: ISelectionId = host.createSelectionIdBuilder()
       .withCategory(parent, index)
       .createSelectionId();
@@ -132,29 +130,80 @@ function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHos
   return dataPoints;
 }
 
+function createLegendDataPoints(
+  options: VisualUpdateOptions,
+  host: IVisualHost,
+  colorCache: Map<string, string>
+): LegendDataPoint[] {
+  const dataPoints: LegendDataPoint[] = [];
+  const dataViews = options.dataViews;
+
+  if (!dataViews || !dataViews[0] || !dataViews[0].categorical || !dataViews[0].categorical.categories) {
+    return dataPoints;
+  }
+
+  const categorical = dataViews[0].categorical;
+  const legendCategory = categorical.categories.find(c => c.source.roles?.legend);
+
+  if (!legendCategory) {
+    return dataPoints;
+  }
+
+  const colorPalette: ISandboxExtendedColorPalette = host.colorPalette;
+  const allValues = legendCategory.values.map(v => `${v}`);
+  const uniqueLegends = [...new Set(allValues)];
+
+  uniqueLegends.forEach((value) => {
+    const firstIndex = allValues.findIndex(v => v === value);
+
+    const selectionId: ISelectionId = host.createSelectionIdBuilder()
+      .withCategory(legendCategory, firstIndex)
+      .createSelectionId();
+
+    const color = getColumnColorByIndex(legendCategory, firstIndex, colorPalette, "legendColorSelector");
+    colorCache.set(value, color);
+
+    dataPoints.push({
+      legend: value,
+      color,
+      selectionId,
+      index: firstIndex
+    });
+  });
+
+  return dataPoints;
+}
+
 function getColumnColorByIndex(
   category: DataViewCategoryColumn,
   index: number,
   colorPalette: ISandboxExtendedColorPalette,
+  objectName: string = "colorSelector"
 ): string {
   if (colorPalette.isHighContrast) {
     return colorPalette.background.value;
   }
 
+  const valueKey = `${category.values[index]}`;
+
   const defaultColor: Fill = {
     solid: {
-      color: colorPalette.getColor(`${category.values[index]}`).value,
+      color: colorPalette.getColor(valueKey).value,
     }
   };
 
   const prop: DataViewObjectPropertyIdentifier = {
-    objectName: "colorSelector",
+    objectName: objectName,
     propertyName: "fill"
   };
 
   let colorFromObjects: Fill;
-  if (category.objects?.[index]) {
-    colorFromObjects = dataViewObjects.getValue(category?.objects[index], prop);
+
+  for (let i = 0; i < category.values.length; i++) {
+    if (`${category.values[i]}` === valueKey && category.objects?.[i]) {
+      colorFromObjects = dataViewObjects.getValue(category.objects[i], prop);
+      break;
+    }
   }
 
   return colorFromObjects?.solid.color ?? defaultColor.solid.color;
@@ -197,6 +246,8 @@ export class Visual implements IVisual {
   private allExpanded = true;
   private host: IVisualHost;
   private ganttdataPoints: GanttDataPoint[]
+  private legendDataPoints: LegendDataPoint[] = []
+  private legend: any;
   private currentZoomTransform?: d3.ZoomTransform;
   private y: d3.ScaleBand<string>;
   private marginLeft: number = 0;
@@ -215,6 +266,8 @@ export class Visual implements IVisual {
   private startName: string = "Start Date";
   private endName: string = "End Date";
   private parentName: string = "Parent";
+  private legendColorCache = new Map<string, string>();
+  private taskParentMap = new Map<number, string>();
 
 
   private computeInnerW(format: FormatType, start: Date, end: Date, width: number, margin: { left: number; right: number; }): number {
@@ -292,29 +345,60 @@ export class Visual implements IVisual {
     return boundedAvg;
   }
 
+  private getBarColor(rowKey: string, legendValue?: string, taskIndex?: number): string {
+    if (this.legendDataPoints.length > 0 && legendValue) {
+      const dp = this.legendDataPoints.find(p => p.legend === legendValue);
+      if (dp) return dp.color;
+    }
+
+    if (taskIndex !== undefined) {
+      const parentFromMap = this.taskParentMap.get(taskIndex);
+      if (parentFromMap) {
+        const dp = this.ganttdataPoints.find(p => p.parent === parentFromMap);
+        if (dp) return dp.color;
+      }
+    }
+
+    return "#72c0ffff";
+  }
+
   constructor(opts: VisualConstructorOptions) {
     this.container = opts.element as HTMLElement;
     this.host = opts.host
-
-    this.selectionManager = this.host.createSelectionManager();
-    this.selectionIdMap = new Map();
 
     this.tooltipServiceWrapper = createTooltipServiceWrapper(
       opts.host.tooltipService,
       opts.element
     );
 
-    while (this.container.firstChild) {
-      this.container.removeChild(this.container.firstChild);
-    }
+    this.selectionManager = this.host.createSelectionManager();
+    this.selectionIdMap = new Map();
 
-    const topBtnsWrapper = d3.select(this.container)
+    const headerWrapper = d3.select(this.container)
+      .append("div")
+      .attr("class", "header-wrapper")
+      .style("display", "flex")
+      .style("flex-direction", "column");
+
+    const legendWrapper = headerWrapper
+      .append("div")
+      .attr("class", "legend-wrapper");
+
+    this.legend = legend.createLegend(
+      legendWrapper.node() as HTMLElement,
+      false,
+      null
+    );
+
+    const topBtnsWrapper = headerWrapper
       .append("div")
       .attr("class", "top-btns-wrapper")
       .style("display", "flex")
       .style("justify-content", "space-between")
       .style("gap", "8px")
       .style("align-items", "center");
+
+    topBtnsWrapper.style("margin-top", "11px");
 
     this.leftBtns = topBtnsWrapper.append("div").attr("class", "parent-btn-container");
     this.rightBtns = topBtnsWrapper.append("div").attr("class", "format-btn-container");
@@ -394,14 +478,18 @@ export class Visual implements IVisual {
       .append("div")
       .attr("class", "x-axis-fixed")
       .style("position", "absolute")
-      .style("top", "60px")
-      .style("left", `0px`)
+      .style("top", () => {
+        const header = this.container.querySelector(".header-wrapper") as HTMLElement;
+        return `${header?.offsetHeight ?? 60}px`;
+      })
+      .style("left", "0px")
       .style("right", "0px")
       .style("height", "60px")
       .style("overflow", "hidden")
       .style("z-index", "0")
       .style("background", "#fff")
       .style("display", "none");
+
 
     this.xAxisFixedSVG = this.xAxisFixedDiv.append("svg")
       .style("width", "100%")
@@ -429,7 +517,11 @@ export class Visual implements IVisual {
       .style("pointer-events", "none");
 
     d3.select(this.container).on("click", () => {
-      this.selectionManager.clear();
+      this.selectionManager.clear().then(() => {
+        this.selectedIds = [];
+        const bars = this.ganttG.selectAll<SVGElement, BarDatum>(".bar, .completion-bar");
+        bars.attr("opacity", 1);
+      });
     });
   }
 
@@ -506,9 +598,38 @@ export class Visual implements IVisual {
 
     this.fmtSettings = this.fmtService.populateFormattingSettingsModel(VisualFormattingSettingsModel, opts.dataViews?.[0]);
     this.ganttdataPoints = createSelectorDataPoints(opts, this.host)
+    this.legendDataPoints = createLegendDataPoints(opts, this.host, this.legendColorCache)
+
     this.fmtSettings.populateColorSelector(this.ganttdataPoints);
+    if (this.legendDataPoints.length > 0) {
+      this.fmtSettings.populateLegendColorSelector(this.legendDataPoints);
+    }
     const { width, height } = opts.viewport;
     this.lastOptions = opts;
+
+    if (this.legendDataPoints.length > 0) {
+      const legendData = {
+        dataPoints: this.legendDataPoints.map(dp => ({
+          label: dp.legend,
+          color: dp.color,
+          icon: 1,
+          identity: dp.selectionId,
+          selected: false
+        })),
+        fontSize: 10,
+        labelColor: "#000000"
+      };
+
+      this.legend.drawLegend(legendData, { width, height });
+    } else {
+      this.legend.reset();
+    }
+
+    d3.select(this.container)
+      .select(".legend")
+      .style("display", "block")
+      .style("white-space", "normal");
+
 
     const dv: DataView | undefined = opts.dataViews?.[0];
     const hasData = Boolean(dv?.categorical?.categories?.length) &&
@@ -705,14 +826,55 @@ export class Visual implements IVisual {
 
     this.ganttSVG
       .on("dblclick", () => {
-        const [minDate, maxDate] = this.xOriginal.domain();
+        const taskDurations = this.cacheTasks
+          .filter(t => t.start && t.end)
+          .map(t => d3.timeDay.count(t.start!, t.end!));
+
+        const avgDuration = taskDurations.length > 0
+          ? d3.mean(taskDurations)!
+          : 30;
+
+        // 🔹 Determinar rango óptimo basado en duración promedio
+        let zoomDays: number;
+        let optimalFormat: FormatType;
+
+        if (avgDuration <= 2) {
+          zoomDays = 7;           // ~1 semana
+          optimalFormat = "Día";
+        } else if (avgDuration <= 15) {
+          zoomDays = 60;          // ~2 meses
+          optimalFormat = "Día";
+        } else if (avgDuration <= 90) {
+          zoomDays = 180;         // ~6 meses
+          optimalFormat = "Mes";
+        } else {
+          zoomDays = 365;         // 1 año
+          optimalFormat = "Mes";
+        }
+
+        // 🔹 Encontrar la primera tarea visible o la primera tarea general
+        let startDate: Date;
+
+        if (this.currentZoomTransform) {
+          const oldX = this.currentZoomTransform.rescaleX(this.xOriginal);
+          const [oldMin] = oldX.domain();
+          const visibleTask = this.cacheTasks
+            .filter(t => t.start && t.end)
+            .sort((a, b) => +a.start! - +b.start!)
+            .find(t => t.start! >= oldMin);
+
+          startDate = visibleTask?.start ?? d3.min(this.cacheTasks, t => t.start)!;
+        } else {
+          startDate = d3.min(this.cacheTasks, t => t.start)!;
+        }
+
+        const endDate = d3.timeDay.offset(startDate, zoomDays);
 
         const visibleW = this.width - this.marginLeft;
-        const rangeWidth = this.xOriginal(maxDate) - this.xOriginal(minDate);
+        const rangeWidth = this.xOriginal(endDate) - this.xOriginal(startDate);
         const scale = visibleW / rangeWidth;
-
-        const barStart = this.xOriginal(minDate);
-        const translateX = (this.marginLeft - this.marginLeft) - barStart * scale + 10;
+        const firstBarX = this.xOriginal(startDate);
+        const translateX = -firstBarX * scale + 20; // 20px de padding
 
         const targetTransform = d3.zoomIdentity
           .translate(translateX, 0)
@@ -721,10 +883,12 @@ export class Visual implements IVisual {
         this.ganttSVG.transition()
           .duration(500)
           .call(this.zoomBehavior.transform, targetTransform);
-        this.selectedFormat = "Año";
+
+        this.selectedFormat = optimalFormat;
         this.updateFormatButtonsUI(this.selectedFormat);
+
         this.ganttSVG.transition()
-          .delay(750)
+          .delay(550)
           .on("end", () => {
             if (this.currentZoomTransform) {
               const newX = this.currentZoomTransform.rescaleX(this.xOriginal);
@@ -1197,22 +1361,33 @@ export class Visual implements IVisual {
     const categorical = opts.dataViews[0].categorical;
     const taskCategory = categorical.categories[0];
 
-    const taskBars: BarDatum[] = visibleRows
+    const taskBars: BarDatum[] = [];
+    visibleRows
       .filter(r => !r.isGroup && r.task)
-      .map(r => ({
-        id: r.task!.id,
-        start: r.task!.start,
-        end: r.task!.end,
-        rowKey: r.rowKey,
-        isGroup: false,
-        index: r.task!.index,
-        completion: r.task!.completion,
-        secondaryStart: r.task!.secondaryStart ? new Date(r.task!.secondaryStart) : undefined,
-        secondaryEnd: r.task!.secondaryEnd ? new Date(r.task!.secondaryEnd) : undefined,
-        selectionId: this.host.createSelectionIdBuilder()
-          .withCategory(taskCategory, r.task!.index)
-          .createSelectionId() as ISelectionId
-      }));
+      .forEach(r => {
+        const task = r.task!;
+        const entries = (task as any).legendEntries || [task];
+
+        entries.forEach((entry: Task) => {
+          if (entry.start && entry.end) {
+            taskBars.push({
+              id: `${entry.id}_${entry.legend || 'default'}`,
+              start: entry.start,
+              end: entry.end,
+              rowKey: r.rowKey,
+              isGroup: false,
+              index: entry.index,
+              completion: entry.completion,
+              secondaryStart: entry.secondaryStart ? new Date(entry.secondaryStart) : undefined,
+              secondaryEnd: entry.secondaryEnd ? new Date(entry.secondaryEnd) : undefined,
+              selectionId: this.host.createSelectionIdBuilder()
+                .withCategory(taskCategory, entry.index)
+                .createSelectionId() as ISelectionId,
+              legend: entry.legend
+            });
+          }
+        });
+      });
 
     const parentCategory = categorical.categories[1];
 
@@ -1220,9 +1395,12 @@ export class Visual implements IVisual {
       .filter(r => r.isGroup)
       .map(r => {
         const range = this.groupRange.get(r.id)!;
-
-        // 🔹 Buscar índice real del padre en la categoría
         const parentIndex = parentCategory.values.findIndex(v => `${v}` === r.id);
+
+        // 🔹 CREAR SELECTION ID PARA EL GRUPO
+        const groupSelectionId = this.host.createSelectionIdBuilder()
+          .withCategory(parentCategory, parentIndex)
+          .createSelectionId();
 
         return {
           id: r.id,
@@ -1248,9 +1426,7 @@ export class Visual implements IVisual {
           ),
           secondaryStart: range.secondaryStart ? new Date(range.secondaryStart) : undefined,
           secondaryEnd: range.secondaryEnd ? new Date(range.secondaryEnd) : undefined,
-
-          // ❌ Sacamos el selectionId en los grupos para evitar conflicto con hijos
-          selectionId: undefined as any
+          selectionId: groupSelectionId
         };
       });
 
@@ -1261,6 +1437,14 @@ export class Visual implements IVisual {
     }));
 
     const defs = this.ganttSVG.append("defs");
+
+    if (this.selectedFormat !== "Día") {
+      this.ganttG.selectAll("line.day").remove();
+      this.ganttG.selectAll("rect.weekend").remove();
+    }
+    if (this.selectedFormat !== "Mes") {
+      this.ganttG.selectAll("line.month").remove();
+    }
 
     allBars.forEach(d => {
       if (!(d.start instanceof Date) || !(d.end instanceof Date)) return;
@@ -1358,19 +1542,10 @@ export class Visual implements IVisual {
         .attr("y", d => yScale(d.rowKey)! + yOff)
         .attr("width", d => x(d.end) - x(d.start))
         .attr("height", this.barH)
-        .attr("fill", d => {
-          const key = d.rowKey.split("|")[1];
-          const dp = this.ganttdataPoints.find(p => p.parent === key);
-          const baseColor = d3.color(dp?.color ?? "#72c0ffff");
-          return baseColor ? d3.interpolateRgb(baseColor, d3.color("#ffffff"))(0.50) : "#cccccc";
-        })
+        .attr("fill", d => this.getBarColor(d.rowKey, d.legend, d.index))
         .attr("rx", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
         .attr("ry", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
-        .attr("stroke", d => {
-          const key = d.rowKey.split("|")[1];
-          const dp = this.ganttdataPoints.find(p => p.parent === key);
-          return dp?.color ?? "#72c0ffff";
-        })
+        .attr("stroke", d => this.getBarColor(d.rowKey, d.legend, d.index))
         .attr("stroke-width", (barCfg.barGroup.slices.find(s => s.name === "strokeWidth") as formattingSettings.Slider).value)
 
         .attr("tabindex", 0)
@@ -1393,11 +1568,16 @@ export class Visual implements IVisual {
           d3.selectAll(`.duration-label[data-rowKey="${d.rowKey}"]`).attr("fill", this.fmtSettings.barCard.labelGroup.fontColor.value.value);
         })
         .on("click", (event, d: BarDatum) => {
-          this.selectionManager.select(d.selectionId, true).then((ids: ISelectionId[]) => {
-            this.selectedIds = ids;
-            this.update(this.lastOptions);
-          });
           event.stopPropagation();
+          // 👇 Cambiar el segundo parámetro de true a event.ctrlKey || event.metaKey
+          this.selectionManager.select(d.selectionId, event.ctrlKey || event.metaKey).then((ids: ISelectionId[]) => {
+            this.selectedIds = ids;
+
+            const bars = this.ganttG.selectAll<SVGElement, BarDatum>(".bar, .completion-bar");
+            bars.attr("opacity", bar =>
+              ids.some(sel => sel.getKey() === bar.selectionId.getKey()) ? 1 : 0.3
+            );
+          });
         })
         .on("contextmenu", (event, d: BarDatum) => {
           this.selectionManager.showContextMenu(d.selectionId, {
@@ -1418,6 +1598,39 @@ export class Visual implements IVisual {
         })
         .attr("stroke-width", 1)
         .style("pointer-events", "all")
+
+        // 🔹 AGREGAR EVENTOS DE CLIC Y TECLADO
+        .attr("tabindex", 0)
+        .on("keydown", (event, d: BarDatum) => {
+          if (event.key === "Enter" || event.key === " ") {
+            // 👇 Cambiar aquí también
+            this.selectionManager.select(d.selectionId, event.ctrlKey || event.metaKey).then((ids: ISelectionId[]) => {
+              this.selectedIds = ids;
+              this.update(this.lastOptions);
+            });
+            event.preventDefault();
+          }
+        })
+        .on("click", (event, d: BarDatum) => {
+          event.stopPropagation();
+          this.selectionManager.select(d.selectionId, true).then((ids: ISelectionId[]) => {
+            this.selectedIds = ids;
+
+            const bars = this.ganttG.selectAll<SVGElement, BarDatum>(".bar, .completion-bar");
+            bars.attr("opacity", bar =>
+              ids.some(sel => sel.getKey() === bar.selectionId.getKey()) ? 1 : 0.3
+            );
+          });
+        })
+        .on("contextmenu", (event, d: BarDatum) => {
+          this.selectionManager.showContextMenu(d.selectionId, {
+            x: event.clientX,
+            y: event.clientY
+          });
+          event.preventDefault();
+        })
+
+        // Eventos de hover (ya existentes)
         .on("mouseover", (event, d: BarDatum) => {
           const strokeColor = d3.select(event.currentTarget).attr("stroke");
           d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
@@ -1425,7 +1638,6 @@ export class Visual implements IVisual {
         .on("mouseout", (event, d: BarDatum) => {
           d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", parFmt.fontColor.value.value);
         });
-
       // === Opacidades según selección y highlights ===
       const highlightColumn = dv.categorical.values.find(val => val.highlights);
 
@@ -1470,11 +1682,7 @@ export class Visual implements IVisual {
           if (c >= 100) return baseWidth;
           return baseWidth * (c > 1 ? c / 100 : c);
         })
-        .attr("fill", d => {
-          const key = d.rowKey.split("|")[1];
-          const dp = this.ganttdataPoints.find(p => p.parent === key);
-          return dp?.color ?? "#72c0ffff";
-        })
+        .attr("fill", d => this.getBarColor(d.rowKey, d.legend, d.index))
         .attr("rx", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
         .attr("ry", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value);
 
@@ -1585,20 +1793,22 @@ export class Visual implements IVisual {
         .attr("stroke-width", 1);
 
       // === LABELS DE DURACIÓN ===
-      renderDurationLabels({
-        svg: this.ganttG,
-        bars: allBars,
-        x,
-        y: this.y,
-        yOffset: yOff,
-        barHeight: this.barH,
-        fontFamily: this.fmtSettings.barCard.labelGroup.fontFamily.value,
-        fontSize: this.fmtSettings.barCard.labelGroup.fontSize.value,
-        fontColor: this.fmtSettings.barCard.labelGroup.fontColor.value.value,
-        bold: this.fmtSettings.barCard.labelGroup.bold.value,
-        italic: this.fmtSettings.barCard.labelGroup.italic.value,
-        underline: this.fmtSettings.barCard.labelGroup.underline.value
-      });
+      if (this.fmtSettings.labelCard.show.value) {
+        renderDurationLabels({
+          svg: this.ganttG,
+          bars: allBars,
+          x,
+          y: this.y,
+          yOffset: yOff,
+          barHeight: this.barH,
+          fontFamily: this.fmtSettings.barCard.labelGroup.fontFamily.value,
+          fontSize: this.fmtSettings.barCard.labelGroup.fontSize.value,
+          fontColor: this.fmtSettings.barCard.labelGroup.fontColor.value.value,
+          bold: this.fmtSettings.barCard.labelGroup.bold.value,
+          italic: this.fmtSettings.barCard.labelGroup.italic.value,
+          underline: this.fmtSettings.barCard.labelGroup.underline.value
+        });
+      }
 
       // === TOOLTIP ===
       const tooltipTargets = this.ganttG.selectAll<SVGElement, BarDatum>(
@@ -1853,6 +2063,7 @@ export class Visual implements IVisual {
     const compVal = cat.values.find(v => v.source.roles?.completion);
     const secStartVal = cat.values.find(v => v.source.roles?.secondaryStart);
     const secEndVal = cat.values.find(v => v.source.roles?.secondaryEnd);
+    const legendCol = cat.categories.find(c => c.source.roles?.legend);
 
     this.secondaryStartName = secStartVal?.source.displayName ?? "Secondary Start Date";
     this.secondaryEndName = secEndVal?.source.displayName ?? "Secondary End Date";
@@ -1935,6 +2146,8 @@ export class Visual implements IVisual {
           ? extraCols
           : Array(this.extraColNames.length).fill("");
 
+      const legendText = legendCol ? String(legendCol.values[i] ?? "") : undefined;
+
       const task: Task = {
         id: taskFields.join(" | "),
         parent: parentTxt,
@@ -1946,10 +2159,12 @@ export class Visual implements IVisual {
         secondaryEnd: secEnd,
         predecessor,
         index: i,
-        extraCols: paddedExtraCols
+        extraCols: paddedExtraCols,
+        legend: legendText
       };
 
       out.push(task);
+      this.taskParentMap.set(i, parentTxt);
     }
 
     return out;
@@ -1960,13 +2175,39 @@ export class Visual implements IVisual {
     const rows: VisualRow[] = [];
     this.groupRange.clear();
 
-    const grouped = d3.group(tasks, t => t.parent);
+    const uniqueParentsInTasks = new Set(tasks.map(t => t.parent));
+
+    const tasksByIdParent = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      const key = `${t.id}|${t.parent}`;
+      if (!tasksByIdParent.has(key)) {
+        tasksByIdParent.set(key, []);
+      }
+      tasksByIdParent.get(key)!.push(t);
+    });
+
+    const uniqueTasks: Task[] = [];
+    tasksByIdParent.forEach((entries, key) => {
+      const firstEntry = entries[0];
+      uniqueTasks.push({
+        ...firstEntry,
+        legendEntries: entries
+      } as any);
+    });
+
+    const grouped = d3.group(uniqueTasks, t => t.parent);
     for (const [parent, list] of grouped.entries()) {
+      const allEntries: Task[] = [];
+      list.forEach(t => {
+        const entries = (t as any).legendEntries || [t];
+        allEntries.push(...entries);
+      });
+
       this.groupRange.set(parent!, {
-        start: d3.min(list, d => d.start)!,
-        end: d3.max(list, d => d.end)!,
-        secondaryStart: d3.min(list, d => d.secondaryStart),
-        secondaryEnd: d3.max(list, d => d.secondaryEnd)
+        start: d3.min(allEntries, d => d.start)!,
+        end: d3.max(allEntries, d => d.end)!,
+        secondaryStart: d3.min(allEntries, d => d.secondaryStart),
+        secondaryEnd: d3.max(allEntries, d => d.secondaryEnd)
       });
       const groupDuration = list.reduce((sum, t) => {
         const dur = Number(t.fields[t.fields.length - 1]);
@@ -1983,19 +2224,20 @@ export class Visual implements IVisual {
 
       const exp = cache.get(parent!) ?? true;
       if (exp) {
-        list.forEach(t =>
+        list.forEach(t => {
           rows.push({
             id: t.id,
             isGroup: false,
             task: t,
             rowKey: `T:${t.id}|${parent}`,
             labelY: t.id
-          })
-        );
+          });
+        });
       }
       cache.set(parent!, exp);
     }
     return { visibleRows: rows, expanded: cache };
+
   }
 
   private redrawZoomedElements(
@@ -2081,15 +2323,17 @@ export class Visual implements IVisual {
         if (isNaN(c) || c <= 0) return 0;
         return baseWidth * (c > 1 ? c / 100 : c);
       });
-    this.ganttG.selectAll<SVGTextElement, BarDatum>(".duration-label")
-      .attr("x", d => {
-        const end = d.end instanceof Date ? d.end : null;
-        const secEnd = d.secondaryEnd instanceof Date ? d.secondaryEnd : null;
+    if (this.fmtSettings.labelCard.show.value) {
+      this.ganttG.selectAll<SVGTextElement, BarDatum>(".duration-label")
+        .attr("x", d => {
+          const end = d.end instanceof Date ? d.end : null;
+          const secEnd = d.secondaryEnd instanceof Date ? d.secondaryEnd : null;
 
-        const baseDate = (end && secEnd && secEnd > end) ? secEnd : end;
+          const baseDate = (end && secEnd && secEnd > end) ? secEnd : end;
 
-        return baseDate ? newX(baseDate) + 4 : -9999;
-      });
+          return baseDate ? newX(baseDate) + 4 : -9999;
+        });
+    }
 
     this.ganttG.selectAll<SVGTextElement, BarDatum>(".completion-label")
       .attr("x", d => {
@@ -2275,5 +2519,7 @@ export class Visual implements IVisual {
     const buttons = this.rightBtns.selectAll("button");
     buttons.classed("active", d => d === fmt);
   }
+
+
 
 }

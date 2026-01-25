@@ -15,6 +15,7 @@ export interface BarDatum {
     secondaryStart?: Date;
     secondaryEnd?: Date;
     selectionId: ISelectionId;
+    legend?: string;
 }
 export interface GanttDataPoint {
     task: string;
@@ -58,6 +59,8 @@ export declare class Visual implements IVisual {
     private allExpanded;
     private host;
     private ganttdataPoints;
+    private legendDataPoints;
+    private legend;
     private currentZoomTransform?;
     private y;
     private marginLeft;
@@ -76,9 +79,12 @@ export declare class Visual implements IVisual {
     private startName;
     private endName;
     private parentName;
+    private legendColorCache;
+    private taskParentMap;
     private computeInnerW;
     private getGroupBarPath;
     private getCompletionByGroup;
+    private getBarColor;
     constructor(opts: VisualConstructorOptions);
     update(opts: VisualUpdateOptions, preserveView?: boolean): void;
     private renderLanding;

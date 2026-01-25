@@ -15,6 +15,12 @@ class ColorSelectorCardSettings extends SimpleCard {
     slices: Slice[] = [];
 }
 
+class LegendColorSelectorCardSettings extends SimpleCard {
+    name: string = "legendColorSelector";
+    displayName?: string = "Legend Colors";
+    slices: Slice[] = [];
+}
+
 /* ────────────────────────────────
    EJE Y
 ──────────────────────────────── */
@@ -60,6 +66,73 @@ class AxisYCardSettings extends SimpleCard {
         this.tickColor,
         this.labelDisplayUnits,
         this.widthLine
+    ];
+}
+
+class LegendCardSettings extends formattingSettings.SimpleCard {
+    public show = new formattingSettings.ToggleSwitch({
+        name: "show",
+        displayName: "Mostrar leyenda",
+        value: true,
+    });
+
+    public position = new formattingSettings.ItemDropdown({
+        name: "position",
+        displayName: "Posición",
+        items: [
+            { displayName: "Arriba", value: "Top" },
+            { displayName: "Abajo", value: "Bottom" },
+            { displayName: "Izquierda", value: "Left" },
+            { displayName: "Derecha", value: "Right" }
+        ],
+        value: { displayName: "Arriba", value: "Top" }
+    });
+
+    public fontSize = new formattingSettings.NumUpDown({
+        name: "fontSize",
+        displayName: "Tamaño de fuente",
+        value: 12,
+        options: {
+            minValue: { type: powerbi.visuals.ValidatorType.Min, value: 8 },
+            maxValue: { type: powerbi.visuals.ValidatorType.Max, value: 24 }
+        }
+    });
+
+    public fontColor = new formattingSettings.ColorPicker({
+        name: "fontColor",
+        displayName: "Color de texto",
+        value: { value: "#333333" }
+    });
+
+    public backgroundColor = new formattingSettings.ColorPicker({
+        name: "backgroundColor",
+        displayName: "Color de fondo",
+        value: { value: "#FFFFFF" }
+    });
+
+    public showTitle = new formattingSettings.ToggleSwitch({
+        name: "showTitle",
+        displayName: "Mostrar título",
+        value: true,
+    });
+
+    public titleText = new formattingSettings.TextInput({
+        name: "titleText",
+        displayName: "Texto del título",
+        value: "Categorías",
+        placeholder: "Título de la leyenda"
+    });
+
+    name: string = "legend";
+    displayName: string = "Leyenda";
+    slices = [
+        this.show,
+        this.position,
+        this.fontSize,
+        this.fontColor,
+        this.backgroundColor,
+        this.showTitle,
+        this.titleText
     ];
 }
 /* ────────────────────────────────
@@ -256,9 +329,43 @@ class TodayMarkerStyleGroup extends SimpleCard {
     public slices: formattingSettings.Slice[] = [this.font, this.markColor];
 }
 
+class labelCardSettings extends SimpleCard {
+    show = new ToggleSwitch({
+        name: "show",
+        displayName: "Mostrar etiqueta de duración",
+        value: true
+    });
 
+    fontColor = new ColorPicker({
+        name: "fontColor",
+        displayName: "Color de fuente",
+        value: { value: "#000000" }
+    });
 
-/* Grupos compuestos */ 
+    backgroundColor = new ColorPicker({
+        name: "backgroundColor",
+        displayName: "Color de fondo",
+        value: { value: "#ffffffff" }
+    });
+
+    fontSize = new NumUpDown({
+        name: "fontSize",
+        displayName: "Tamaño de fuente",
+        value: 15
+    });
+
+    fontFamily = new FontPicker({
+        name: "fontFamily",
+        displayName: "Fuente",
+        value: "Segoe UI"
+    });
+
+    name = "labelCard";
+    displayName = "Etiquetas";
+    slices: FormattingSettingsSlice[] = [this.show, this.fontColor, this.backgroundColor, this.fontSize, this.fontFamily];
+}
+
+/* Grupos compuestos */
 
 class BarCardSettings extends CompositeCard {
     name = "barCard";
@@ -396,7 +503,7 @@ class TaskCardSetting extends SimpleCard {
 
     name = "taskStyle";
     displayName = "Tareas";
-    slices: FormattingSettingsSlice[] = [this.show, this.showSecondaryColumns, this.taskHeight, this.fontColor, this.fontSize, this.fontFamily, this.taskWidth, this.startWidth, this.endWidth, this.secStartWidth, this.secEndWidth ];
+    slices: FormattingSettingsSlice[] = [this.show, this.showSecondaryColumns, this.taskHeight, this.fontColor, this.fontSize, this.fontFamily, this.taskWidth, this.startWidth, this.endWidth, this.secStartWidth, this.secEndWidth];
 }
 
 /* ────────────────────────────────
@@ -437,21 +544,21 @@ class ParentCardSetting extends SimpleCard {
 /* ______________________
       Weekend
 ____________________*/
-class WeekendCardSettings extends SimpleCard{
-        show = new ToggleSwitch({
-            name: "show",
-            displayName: "Mostrar marcador",
-            value: true
-        })
-        markerColor = new ColorPicker({
-            name: "markerColor",
-            displayName: "Color de marcador",
-            value: { value: "#E6E6E6"}
-        })
-        name = "weekendCard";
-        displayName = "Weekend";
-        slices: formattingSettings.Slice[] = [this.show, this.markerColor]
-    }
+class WeekendCardSettings extends SimpleCard {
+    show = new ToggleSwitch({
+        name: "show",
+        displayName: "Mostrar marcador",
+        value: true
+    })
+    markerColor = new ColorPicker({
+        name: "markerColor",
+        displayName: "Color de marcador",
+        value: { value: "#E6E6E6" }
+    })
+    name = "weekendCard";
+    displayName = "Weekend";
+    slices: formattingSettings.Slice[] = [this.show, this.markerColor]
+}
 /* ______________________
       Completion Label
 ____________________*/
@@ -514,9 +621,12 @@ export class VisualFormattingSettingsModel extends Model {
     taskCard = new TaskCardSetting();
     parentCard = new ParentCardSetting();
     colorSelector = new ColorSelectorCardSettings();
+    legendColorSelector = new LegendColorSelectorCardSettings();
     weekendCard = new WeekendCardSettings();
     completionCard = new completionCardSettings();
     timeMarkerCard = new TimeMarkerCardSettings();
+    legend = new LegendCardSettings();
+    labelCard = new labelCardSettings();
 
     cards: Card[] = [
         this.axisXCard,
@@ -526,9 +636,12 @@ export class VisualFormattingSettingsModel extends Model {
         this.taskCard,
         this.parentCard,
         this.colorSelector,
+        this.legendColorSelector,
         this.weekendCard,
         this.completionCard,
-        this.timeMarkerCard
+        this.timeMarkerCard,
+        this.legend,
+        this.labelCard
     ];
 
     populateColorSelector(dataPoints: GanttDataPoint[]) {
@@ -538,6 +651,20 @@ export class VisualFormattingSettingsModel extends Model {
                 slices.push(new ColorPicker({
                     name: "fill",
                     displayName: dataPoint.parent,
+                    value: { value: dataPoint.color },
+                    selector: dataPoint.selectionId.getSelector(),
+                }));
+            });
+        }
+    }
+
+    populateLegendColorSelector(dataPoints: any[]) {
+        const slices: Slice[] = this.legendColorSelector.slices;
+        if (dataPoints) {
+            dataPoints.forEach(dataPoint => {
+                slices.push(new ColorPicker({
+                    name: "fill",
+                    displayName: dataPoint.legend,
                     value: { value: dataPoint.color },
                     selector: dataPoint.selectionId.getSelector(),
                 }));

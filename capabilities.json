@@ -1,670 +1,141 @@
 {
-  "dataRoles": [
-    {
-      "displayName": "Task",
-      "name": "task",
-      "kind": "Grouping"
-    },
-    {
-      "displayName": "Columns",
-      "name": "columns",
-      "kind": "GroupingOrMeasure"
-    },
-    {
-      "displayName": "Parent",
-      "name": "parent",
-      "kind": "Grouping"
-    },
-    {
-      "displayName": "Start Date",
-      "name": "startDate",
-      "kind": "Measure"
-    },
-    {
-      "displayName": "End Date",
-      "name": "endDate",
-      "kind": "Measure"
-    },
-    {
-      "displayName": "Secondary Start Date",
-      "name": "secondaryStart",
-      "kind": "Measure"
-    },
-    {
-      "displayName": "Secondary End Date",
-      "name": "secondaryEnd",
-      "kind": "Measure"
-    },
-    {
-      "displayName": "Duration",
-      "name": "duration",
-      "kind": "Measure"
-    },
-    {
-      "displayName": "Predecessor",
-      "name": "predecessor",
-      "kind": "GroupingOrMeasure"
-    },
-    {
-      "displayName": "Completion",
-      "name": "completion",
-      "kind": "Measure"
-    },
-    {
-      "displayName": "Tooltips",
-      "name": "tooltips",
-      "kind": "Measure"
-    }
+  "dataRoles":[
+    {"displayName":"Task","name":"task","kind":"Grouping"},
+    {"displayName":"Columns","name":"columns","kind":"GroupingOrMeasure"},
+    {"displayName":"Parent","name":"parent","kind":"Grouping"},
+    {"displayName":"Start Date","name":"startDate","kind":"Measure"},
+    {"displayName":"End Date","name":"endDate","kind":"Measure"},
+    {"displayName":"Secondary Start Date","name":"secondaryStart","kind":"Measure"},
+    {"displayName":"Secondary End Date","name":"secondaryEnd","kind":"Measure"},
+    {"displayName":"Duration","name":"duration","kind":"Measure"},
+    {"displayName":"Predecessor","name":"predecessor","kind":"GroupingOrMeasure"},
+    {"displayName":"Completion","name":"completion","kind":"Measure"},
+    {"displayName":"Tooltips","name":"tooltips","kind":"Measure"},
+    {"displayName": "Legend", "name": "legend", "kind": "Grouping"}
   ],
-  "dataViewMappings": [
-    {
-      "conditions": [
-        {
-          "parent": {
-            "max": 1
-          },
-          "startDate": {
-            "max": 1
-          },
-          "endDate": {
-            "max": 1
-          },
-          "secondaryEnd": {
-            "max": 1
-          },
-          "secondaryStart": {
-            "max": 1
-          },
-          "predecessor": {
-            "max": 1
-          },
-          "completion": {
-            "max": 1
-          },
-          "columns": {
-            "max": 5
-          }
-        }
-      ],
-      "categorical": {
-        "categories": {
-          "select": [
-            {
-              "bind": {
-                "to": "task"
-              }
-            },
-            {
-              "bind": {
-                "to": "parent"
-              }
-            },
-            {
-              "bind": {
-                "to": "predecessor"
-              }
-            },
-            {
-              "for": {
-                "in": "columns"
-              }
-            }
-          ]
-        },
-        "values": {
-          "select": [
-            {
-              "bind": {
-                "to": "startDate"
-              }
-            },
-            {
-              "bind": {
-                "to": "endDate"
-              }
-            },
-            {
-              "bind": {
-                "to": "columns"
-              }
-            },
-            {
-              "bind": {
-                "to": "secondaryStart"
-              }
-            },
-            {
-              "bind": {
-                "to": "secondaryEnd"
-              }
-            },
-            {
-              "bind": {
-                "to": "completion"
-              }
-            }
-          ]
-        }
-      }
+  "dataViewMappings":[{
+    "conditions":[{
+      "parent":{"max":1},"startDate":{"max":1},"endDate":{"max":1},
+      "secondaryEnd":{"max":1},"secondaryStart":{"max":1},
+      "predecessor":{"max":1},"completion":{"max":1},
+      "columns":{"max":5}
+    }],
+    "categorical":{
+      "categories":{"select":[
+        {"bind":{"to":"task"}},
+        {"bind":{"to":"parent"}},
+        {"bind":{"to":"legend"}},
+        {"bind":{"to":"predecessor"}},
+        {"for":{"in":"columns"}}
+      ]},
+      "values":{"select":[
+        {"bind":{"to":"startDate"}},{"bind":{"to":"endDate"}},
+        {"bind":{"to":"columns"}},{"bind":{"to":"secondaryStart"}},
+        {"bind":{"to":"secondaryEnd"}},{"bind":{"to":"completion"}}
+      ]}
     }
-  ],
-  "objects": {
-    "general": {
-      "displayName": "General",
-      "properties": {
-        "formatString": {
-          "type": {
-            "formatting": {
-              "formatString": true
-            }
-          }
-        }
-      }
-    },
-    "formatState": {
-    "displayName": "Formato",
-    "properties": {
-      "selectedFormat": {
-        "displayName": "Formato seleccionado",
-        "type": { "text": true }
-      }
-    }
+  }],
+  "objects":{
+    "general":{"displayName":"General","properties":{
+      "formatString":{"type":{"formatting":{"formatString":true}}}
+    }},
+    "formatState":{"displayName":"Formato","properties":{
+      "selectedFormat":{"displayName":"Formato seleccionado","type":{"text":true}}
+    }},
+    "headerStyle":{"displayName":"Encabezados","properties":{
+      "show":{"displayName":"Mostrar encabezados","type":{"bool":true}},
+      "fontColor":{"displayName":"Color de fuente","type":{"fill":{"solid":{"color":true}}}},
+      "backgroundColor":{"displayName":"Color de fondo","type":{"fill":{"solid":{"color":true}}}},
+      "fontSize":{"displayName":"Tamaño de fuente","type":{"formatting":{"fontSize":true}}},
+      "fontFamily":{"displayName":"Fuente","type":{"formatting":{"fontFamily":true}}}
+    }},
+    "labelCard":{"displayName":"Encabezados","properties":{
+      "show":{"displayName":"Mostrar encabezados","type":{"bool":true}},
+      "fontColor":{"displayName":"Color de fuente","type":{"fill":{"solid":{"color":true}}}},
+      "backgroundColor":{"displayName":"Color de fondo","type":{"fill":{"solid":{"color":true}}}},
+      "fontSize":{"displayName":"Tamaño de fuente","type":{"formatting":{"fontSize":true}}},
+      "fontFamily":{"displayName":"Fuente","type":{"formatting":{"fontFamily":true}}}
+    }},
+    "colorSelector":{"displayName":"Data colors","properties":{
+      "fill":{"type":{"fill":{"solid":{"color":true}}}}
+    }},
+    "axisY":{"displayName":"Eje Y","properties":{
+      "showLine":{"displayName":"Mostrar línea","type":{"bool":true}},
+      "lineColor":{"displayName":"Color de línea","type":{"fill":{"solid":{"color":true}}}},
+      "tickColor":{"displayName":"Color de ticks","type":{"fill":{"solid":{"color":true}}}},
+      "labelDisplayUnits":{"displayName":"Unidades de etiqueta","type":{"integer":true}}
+    }},
+    "axisXCard":{"displayName":"Eje X","properties":{
+      "fontFamily":{"displayName":"Fuente","type":{"formatting":{"fontFamily":true}}},
+      "fontSize":{"displayName":"Tamaño","type":{"formatting":{"fontSize":true}}},
+      "fontColor":{"displayName":"Color","type":{"fill":{"solid":{"color":true}}}},
+      "bold":{"type":{"bool":true}},"italic":{"type":{"bool":true}},
+      "underline":{"type":{"bool":true}}
+    }},
+    "todayMarkerGroup":{"displayName":"Etiqueta % de completado","properties":{
+      "fontFamily":{"displayName":"Fuente","type":{"formatting":{"fontFamily":true}}},
+      "fontSize":{"displayName":"Tamaño","type":{"formatting":{"fontSize":true}}},
+      "fontColor":{"displayName":"Color","type":{"fill":{"solid":{"color":true}}}},
+      "bold":{"type":{"bool":true}},"italic":{"type":{"bool":true}},
+      "underline":{"type":{"bool":true}}
+    }},
+    "completionStyleGroup":{"displayName":"Etiqueta de completado","properties":{
+      "fontFamily":{"displayName":"Fuente","type":{"formatting":{"fontFamily":true}}},
+      "fontSize":{"displayName":"Tamaño","type":{"formatting":{"fontSize":true}}},
+      "fontColor":{"displayName":"Color","type":{"fill":{"solid":{"color":true}}}},
+      "bold":{"type":{"bool":true}},"italic":{"type":{"bool":true}},
+      "underline":{"type":{"bool":true}}
+    }},
+    "weekendCard":{"displayName":"Marcador fin de semanas","properties":{
+      "show":{"type":{"bool":true}},
+      "markerColor":{"type":{"fill":{"solid":{"color":true}}}}
+    }},
+    "barCard":{"displayName":"Barras","properties":{
+      "fontFamily":{"displayName":"Fuente","type":{"formatting":{"fontFamily":true}}},
+      "fontSize":{"type":{"formatting":{"fontSize":true}}},
+      "fontColor":{"type":{"fill":{"solid":{"color":true}}}},
+      "bold":{"type":{"bool":true}},"italic":{"type":{"bool":true}},
+      "underline":{"type":{"bool":true}},
+      "fill":{"type":{"fill":{"solid":{"color":true}}}},
+      "barHeight":{"type":{"integer":true}},
+      "cornerRadius":{"type":{"integer":true}},
+      "opacity":{"type":{"numeric":true}},
+      "strokeColor":{"type":{"fill":{"solid":{"color":true}}}},
+      "strokeWidth":{"type":{"numeric":true}}
+    }},
+    "taskStyle":{"displayName":"Tareas","properties":{
+      "show":{"displayName":"Mostrar tareas","type":{"bool":true}},
+      "showSecondary":{"displayName":"Mostrar campos de Secondary","type":{"bool":true}},
+      "fontColor":{"displayName":"Color de fuente","type":{"fill":{"solid":{"color":true}}}},
+      "fontSize":{"displayName":"Tamaño de fuente","type":{"formatting":{"fontSize":true}}},
+      "fontFamily":{"displayName":"Fuente","type":{"formatting":{"fontFamily":true}}},
+      "taskHeight":{"displayName":"Alto de tarea","type":{"integer":true}},
+      "taskWidth":{"displayName":"Ancho campo de tarea","type":{"integer":true}},
+      "startWidth":{"displayName":"Ancho campo de inicio","type":{"integer":true}},
+      "endWidth":{"displayName":"Ancho campo de fin","type":{"integer":true}},
+      "secStartWidth":{"displayName":"Ancho campo de inicio secundaria","type":{"integer":true}},
+      "secEndWidth":{"displayName":"Ancho campo de fin secundaria","type":{"integer":true}}
+    }},
+    "parentStyle":{"displayName":"Parent","properties":{
+      "show":{"displayName":"Mostrar Parent","type":{"bool":true}},
+      "backgroundColor":{"displayName":"Color de fuente","type":{"fill":{"solid":{"color":true}}}},
+      "fontColor":{"displayName":"Color de fuente","type":{"fill":{"solid":{"color":true}}}},
+      "fontSize":{"displayName":"Tamaño de fuente","type":{"formatting":{"fontSize":true}}},
+      "fontFamily":{"displayName":"Fuente","type":{"formatting":{"fontFamily":true}}}
+    }},
+    "legendColorSelector":{"displayName":"Legend Colors","properties":{"fill":{"displayName":"Color","type":{"fill":{"solid":{"color":true}}}}}}
   },
-    "headerStyle": {
-      "displayName": "Encabezados",
-      "properties": {
-        "show": {
-          "displayName": "Mostrar encabezados",
-          "type": {
-            "bool": true
-          }
-        },
-        "fontColor": {
-          "displayName": "Color de fuente",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "backgroundColor": {
-          "displayName": "Color de fondo",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "fontSize": {
-          "displayName": "Tamaño de fuente",
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontFamily": {
-          "displayName": "Fuente",
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        }
-      }
-    },
-    "colorSelector": {
-      "displayName": "Data colors",
-      "properties": {
-        "fill": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        }
-      }
-    },
-    "axisY": {
-      "displayName": "Eje Y",
-      "properties": {
-        "showLine": {
-          "displayName": "Mostrar línea",
-          "type": {
-            "bool": true
-          }
-        },
-        "lineColor": {
-          "displayName": "Color de línea",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "tickColor": {
-          "displayName": "Color de ticks",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "labelDisplayUnits": {
-          "displayName": "Unidades de etiqueta",
-          "type": {
-            "integer": true
-          }
-        }
-      }
-    },
-    "axisXCard": {
-      "displayName": "Eje X",
-      "properties": {
-        "fontFamily": {
-          "displayName": "Fuente",
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        },
-        "fontSize": {
-          "displayName": "Tamaño",
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontColor": {
-          "displayName": "Color",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "bold": {
-          "type": {
-            "bool": true
-          }
-        },
-        "italic": {
-          "type": {
-            "bool": true
-          }
-        },
-        "underline": {
-          "type": {
-            "bool": true
-          }
-        }
-      }
-    },
-    "todayMarkerGroup": {
-      "displayName": "Etiqueta % de completado",
-      "properties": {
-        "fontFamily": {
-          "displayName": "Fuente",
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        },
-        "fontSize": {
-          "displayName": "Tamaño",
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontColor": {
-          "displayName": "Color",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "bold": {
-          "type": {
-            "bool": true
-          }
-        },
-        "italic": {
-          "type": {
-            "bool": true
-          }
-        },
-        "underline": {
-          "type": {
-            "bool": true
-          }
-        }
-      }
-    },
-    "completionStyleGroup": {
-      "displayName": "Etiqueta de completado",
-      "properties": {
-        "fontFamily": {
-          "displayName": "Fuente",
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        },
-        "fontSize": {
-          "displayName": "Tamaño",
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontColor": {
-          "displayName": "Color",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "bold": {
-          "type": {
-            "bool": true
-          }
-        },
-        "italic": {
-          "type": {
-            "bool": true
-          }
-        },
-        "underline": {
-          "type": {
-            "bool": true
-          }
-        }
-      }
-    },
-    "weekendCard": {
-      "displayName": "Marcador fin de semanas",
-      "properties": {
-        "show": {
-          "type": {
-            "bool": true
-          }
-        },
-        "markerColor": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        }
-      }
-    },
-    "barCard": {
-      "displayName": "Barras",
-      "properties": {
-        "fontFamily": {
-          "displayName": "Fuente",
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        },
-        "fontSize": {
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontColor": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "bold": {
-          "type": {
-            "bool": true
-          }
-        },
-        "italic": {
-          "type": {
-            "bool": true
-          }
-        },
-        "underline": {
-          "type": {
-            "bool": true
-          }
-        },
-        "fill": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "barHeight": {
-          "type": {
-            "integer": true
-          }
-        },
-        "cornerRadius": {
-          "type": {
-            "integer": true
-          }
-        },
-        "opacity": {
-          "type": {
-            "numeric": true
-          }
-        },
-        "strokeColor": {
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "strokeWidth": {
-          "type": {
-            "numeric": true
-          }
-        }
-      }
-    },
-    "taskStyle": {
-      "displayName": "Tareas",
-      "properties": {
-        "show": {
-          "displayName": "Mostrar tareas",
-          "type": {
-            "bool": true
-          }
-        },
-        "showSecondary": {
-          "displayName": "Mostrar campos de Secondary",
-          "description": "Mostrar campos de Secondary",
-          "type": {
-            "bool": true
-          }
-        },
-        "fontColor": {
-          "displayName": "Color de fuente",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "fontSize": {
-          "displayName": "Tamaño de fuente",
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontFamily": {
-          "displayName": "Fuente",
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        },
-        "taskHeight": {
-          "displayName": "Alto de tarea",
-          "description": "Altura en píxeles; 0 = automático",
-          "type": {
-            "integer": true
-          }
-        },
-        "taskWidth": {
-          "displayName": "Ancho campo de tarea",
-          "description": "Altura en píxeles; 0 = automático",
-          "type": {
-            "integer": true
-          }
-        },
-        "startWidth": {
-          "displayName": "Ancho campo de inicio",
-          "description": "Altura en píxeles; 0 = automático",
-          "type": {
-            "integer": true
-          }
-        },
-        "endWidth": {
-          "displayName": "Ancho campo de fin",
-          "description": "Altura en píxeles; 0 = automático",
-          "type": {
-            "integer": true
-          }
-        },
-        "secStartWidth": {
-          "displayName": "Ancho campo de inicio secundaria",
-          "description": "Altura en píxeles; 0 = automático",
-          "type": {
-            "integer": true
-          }
-        },
-        "secEndWidth": {
-          "displayName": "Ancho campo de fin secundaria",
-          "description": "Altura en píxeles; 0 = automático",
-          "type": {
-            "integer": true
-          }
-        }
-      }
-    },
-    "parentStyle": {
-      "displayName": "Parent",
-      "properties": {
-        "show": {
-          "displayName": "Mostrar Parent",
-          "type": {
-            "bool": true
-          }
-        },
-        "backgroundColor": {
-          "displayName": "Color de fuente",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "fontColor": {
-          "displayName": "Color de fuente",
-          "type": {
-            "fill": {
-              "solid": {
-                "color": true
-              }
-            }
-          }
-        },
-        "fontSize": {
-          "displayName": "Tamaño de fuente",
-          "type": {
-            "formatting": {
-              "fontSize": true
-            }
-          }
-        },
-        "fontFamily": {
-          "displayName": "Fuente",
-          "type": {
-            "formatting": {
-              "fontFamily": true
-            }
-          }
-        }
-      }
-    }
+  "tooltips":{
+    "supportedTypes":{"default":true,"canvas":true,"page":true},
+    "roles":["tooltips"],
+    "supportEnhancedTooltips":true
   },
-  "tooltips": {
-    "supportedTypes": {
-      "default": true,
-      "canvas": true,
-      "page": true
-    },
-    "roles": [
-      "tooltips"
-    ],
-    "supportEnhancedTooltips": true
-  },
-"suppressDefaultTitle": false,
-"supportsHighlight": true,
-"supportsLandingPage": true,
-"supportsKeyboardFocus": true,
-"supportsMultiVisualSelection": true,
-"sorting": {
-  "default": {}
-},
-"drilldown": {
-  "roles": [
-    "task",
-    "parent"
-  ]
-},
-"privileges": []
+  "suppressDefaultTitle":false,
+  "supportsHighlight":true,
+  "supportsLandingPage":true,
+  "supportsKeyboardFocus":true,
+  "supportsMultiVisualSelection":true,
+  "sorting":{"default":{}},
+  "drilldown":{"roles":["task","parent"]},
+  "privileges":[]
 }
