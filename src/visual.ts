@@ -15,7 +15,8 @@ import { legend } from "powerbi-visuals-utils-chartutils";
 import { renderXAxisBottom } from "./components/xAxis/renderXAxisBottom";
 import { renderXAxisTop } from "./components/xAxis/renderXAxisTop";
 import { renderLanding } from "./components/renderLanding";
-// powerbi.visuals
+import { getGroupBarPath } from "./utils/barPaths";
+import { getCompletionByGroup } from "./utils/completionCalculator";
 import IVisual = powerbi.extensibility.IVisual;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
@@ -243,55 +244,6 @@ export class Visual implements IVisual {
       default:
         return width - margin.left - margin.right;
     }
-  }
-
-  private getGroupBarPath(
-    scaleX: d3.ScaleTime<number, number>,
-    scaleY: d3.ScaleBand<string>,
-    d: BarDatum,
-    taskHeight: number,
-    barHeight: number
-  ): string {
-    const x1 = scaleX(d.start);
-    const x2 = scaleX(d.end);
-    const width = x2 - x1;
-
-    const yTop = scaleY(d.rowKey)! + (taskHeight - barHeight) / 2;
-    const topHeight = barHeight * 0.5;
-    const tipHeight = barHeight * 0.6;
-    const tipInset = Math.min(width * 0.15, 35);
-
-    return `
-      M${x1},${yTop}
-      H${x2}
-      L${x2},${yTop + topHeight + tipHeight}
-      L${x2 - tipInset},${yTop + topHeight}
-      H${x1 + tipInset}
-      L${x1},${yTop + topHeight + tipHeight}
-      Z
-    `;
-  }
-
-  private getCompletionByGroup(rowKey: string, allBars: BarDatum[]): number {
-    const groupId = rowKey.replace(/^G:/, "");
-
-    const children = allBars.filter(b => {
-      if (b.isGroup) return false;
-      const parts = b.rowKey.split("|");
-      return parts.length === 2 && parts[1] === groupId;
-    });
-
-    const completions = children
-      .map(c => Number(c.completion))
-      .filter(c => !isNaN(c));
-
-    if (!completions.length) {
-      return 0;
-    }
-
-    const avg = completions.reduce((a, b) => a + b, 0) / completions.length;
-    const boundedAvg = Math.max(0, Math.min(1, avg > 1 ? avg / 100 : avg));
-    return boundedAvg;
   }
 
   private getBarColor(rowKey: string, legendValue?: string): string {
@@ -1516,7 +1468,7 @@ export class Visual implements IVisual {
           rowKey: r.rowKey,
           isGroup: true,
           index: parentIndex,
-          completion: this.getCompletionByGroup(
+          completion: getCompletionByGroup(
             r.rowKey,
             this.cacheTasks.map((t, j) => ({
               id: t.id,
@@ -1679,7 +1631,7 @@ export class Visual implements IVisual {
 
       // === PADRES (grupos) ===
       bars.filter(d => d.isGroup)
-        .attr("d", d => this.getGroupBarPath(x, yScale, d, taskFmt.taskHeight.value, this.barH))
+        .attr("d", d => getGroupBarPath(x, yScale, d, taskFmt.taskHeight.value, this.barH))
         .attr("fill", d => `url(#${d.gradientId})`)
         .attr("stroke", d => {
           const key = d.rowKey.split("|")[0].replace(/^[A-Z]:/, "");
@@ -1869,7 +1821,7 @@ export class Visual implements IVisual {
         d.end instanceof Date &&
         !isNaN(d.end.getTime())
       )
-        .attr("d", d => this.getGroupBarPath(x, yScale, d, taskFmt.taskHeight.value, this.barH))
+        .attr("d", d => getGroupBarPath(x, yScale, d, taskFmt.taskHeight.value, this.barH))
         .attr("fill", d => `url(#${d.gradientId})`)
         .attr("stroke", d => {
           const key = d.rowKey.split("|")[0].replace(/^[A-Z]:/, "");
@@ -2046,7 +1998,6 @@ export class Visual implements IVisual {
     if (!dv.categorical?.categories?.length) return [];
     const cat = dv.categorical;
 
-    // === valores estándar ===
     const sVal = cat.values.find(v => v.source.roles?.startDate);
     const eVal = cat.values.find(v => v.source.roles?.endDate);
     const durVal = cat.values.find(v => v.source.roles?.duration);
@@ -2158,7 +2109,6 @@ export class Visual implements IVisual {
 
     return out;
   }
-
 
   private buildRows(tasks: Task[], cache: Map<string, boolean>) {
     const rows: VisualRow[] = [];
@@ -2340,7 +2290,7 @@ export class Visual implements IVisual {
         !isNaN(d.end.getTime())
       )
       .attr("d", d =>
-        this.getGroupBarPath(
+        getGroupBarPath(
           newX,
           y,
           d,

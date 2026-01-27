@@ -82,8 +82,6 @@ export declare class Visual implements IVisual {
     private parentName;
     private legendColorStore;
     private computeInnerW;
-    private getGroupBarPath;
-    private getCompletionByGroup;
     private getBarColor;
     private createLegendDataPoints;
     constructor(opts: VisualConstructorOptions);
