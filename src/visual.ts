@@ -334,15 +334,34 @@ export class Visual implements IVisual {
 
     const colorPalette = this.host.colorPalette;
 
+    // 🔹 PASO 1: Cargar colores guardados desde un JSON string
+    const colorMapString = dv?.metadata?.objects?.["legendColorState"]?.["colorMap"] as string;
+    if (colorMapString) {
+      try {
+        const colorMap = JSON.parse(colorMapString);
+        Object.keys(colorMap).forEach(legendValue => {
+          const color = colorMap[legendValue];
+          if (color && typeof color === 'string') {
+            this.legendColorStore.set(legendValue, color);
+            console.log(`✅ Cargado desde metadata: "${legendValue}" = ${color}`);
+          }
+        });
+      } catch (e) {
+        console.error("Error al parsear colorMap:", e);
+      }
+    }
+
     const prop: DataViewObjectPropertyIdentifier = {
       objectName: "legendColorSelector",
       propertyName: "fill"
     };
 
+    // 🔹 PASO 2: Procesar valores actuales y detectar cambios
     const colorChangesByValue = new Map<string, string>();
 
     legendCategory.values.forEach((v, i) => {
       const key = String(v);
+      
       const obj = legendCategory.objects?.[i];
       
       if (obj) {
@@ -351,7 +370,7 @@ export class Visual implements IVisual {
           const currentStored = this.legendColorStore.get(key);
           
           if (currentStored !== fill.solid.color) {
-            console.log(`Color cambió para "${key}": ${currentStored} -> ${fill.solid.color}`);
+            console.log(`🔄 Color cambió para "${key}": ${currentStored} -> ${fill.solid.color}`);
             this.legendColorStore.set(key, fill.solid.color);
             colorChangesByValue.set(key, fill.solid.color);
           }
@@ -359,9 +378,17 @@ export class Visual implements IVisual {
       }
     });
 
+    // 🔹 PASO 3: Si hay cambios, persistir TODO el estado como JSON
     if (colorChangesByValue.size > 0) {
       const updates: any[] = [];
       
+      // Construir el mapa completo de colores
+      const colorMapObject: any = {};
+      this.legendColorStore.forEach((color, legendValue) => {
+        colorMapObject[legendValue] = color;
+      });
+      
+      // Actualizar los selectores individuales solo para los valores cambiados
       colorChangesByValue.forEach((newColor, legendValue) => {
         legendCategory.values.forEach((v, i) => {
           if (String(v) === legendValue) {
@@ -381,12 +408,20 @@ export class Visual implements IVisual {
         });
       });
 
-      if (updates.length > 0) {
-        console.log(`Sincronizando ${updates.length} colores...`);
-        this.host.persistProperties({ merge: updates });
-      }
+      // 🔹 Guardar estado global como JSON string
+      updates.push({
+        objectName: "legendColorState",
+        selector: null,
+        properties: {
+          colorMap: JSON.stringify(colorMapObject)
+        }
+      });
+
+      console.log(`💾 Persistiendo ${Object.keys(colorMapObject).length} colores:`, colorMapObject);
+      this.host.persistProperties({ merge: updates });
     }
 
+    // 🔹 PASO 4: Crear data points con colores del store
     const uniqueValues = new Set<string>();
     const indexByLegend = new Map<string, number>();
 
@@ -408,11 +443,31 @@ export class Visual implements IVisual {
 
       let color: string;
 
+      // Primero intentar obtener del store (que ya tiene los guardados)
       if (this.legendColorStore.has(value)) {
         color = this.legendColorStore.get(value)!;
+        console.log(`🎨 Usando color del store para "${value}": ${color}`);
       } else {
+        // Si no existe, generar uno nuevo
         color = colorPalette.getColor(value).value;
         this.legendColorStore.set(value, color);
+        console.log(`🆕 Generando nuevo color para "${value}": ${color}`);
+        
+        // 🔹 Guardar inmediatamente el nuevo color
+        const updatedColorMap: any = {};
+        this.legendColorStore.forEach((c, k) => {
+          updatedColorMap[k] = c;
+        });
+        
+        this.host.persistProperties({
+          merge: [{
+            objectName: "legendColorState",
+            selector: null,
+            properties: {
+              colorMap: JSON.stringify(updatedColorMap)
+            }
+          }]
+        });
       }
 
       dataPoints.push({

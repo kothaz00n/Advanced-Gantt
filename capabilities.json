@@ -129,7 +129,18 @@
     "legendColorSelector":{"displayName":"Legend Colors","properties":{
       "fill":{"displayName":"Color","type":{"fill":{"solid":{"color":true}}}},
       "legendColorMap":{"displayName":"Legend color map","type":{"text":true}}
-    }}
+    }},
+    "legendColorState": {
+  "displayName": "Legend Color State",
+  "properties": {
+    "colorMap": {
+      "displayName": "Color Map",
+      "type": {
+        "text": true
+      }
+    }
+  }
+}
   },
   "tooltips":{
     "supportedTypes":{"default":true,"canvas":true,"page":true},
