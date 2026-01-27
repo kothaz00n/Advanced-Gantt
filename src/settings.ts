@@ -6,6 +6,8 @@ import FormattingSettingsGroup = formattingSettings.Group;
 import Card = formattingSettings.SimpleCard;
 import { Model, Slice, ColorPicker, SimpleCard, NumUpDown, ToggleSwitch, FontControl, CompositeCard, FontPicker } from "powerbi-visuals-utils-formattingmodel/lib/FormattingSettingsComponents";
 import { GanttDataPoint } from "./visual";
+import powerbiVisualsApi from "powerbi-visuals-api";
+import VisualEnumerationInstanceKinds = powerbiVisualsApi.VisualEnumerationInstanceKinds;
 
 /* DATA COLORS */
 

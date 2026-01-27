@@ -53,11 +53,6 @@ interface VisualRow {
   extraCols?: string[];
 }
 
-interface References {
-  cardUid?: string;
-  groupUid?: string;
-  fill?: FormattingId;
-}
 export interface BarDatum {
   id: string;
   start: Date;
@@ -91,6 +86,7 @@ interface LegendDataPoint {
   color: string;
   selectionId: ISelectionId;
   index: number;
+  formattingId: FormattingId;
 }
 
 function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHost): GanttDataPoint[] {
@@ -133,64 +129,6 @@ function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHos
   });
   return dataPoints;
 }
-
-function createLegendDataPoints(
-  options: VisualUpdateOptions,
-  host: IVisualHost
-): LegendDataPoint[] {
-
-  const dataPoints: LegendDataPoint[] = [];
-  const dv = options.dataViews?.[0];
-  const categorical = dv?.categorical;
-
-  if (!categorical?.categories) {
-    return dataPoints;
-  }
-
-  const legendCategory = categorical.categories.find(c => c.source.roles?.legend);
-  if (!legendCategory) {
-    return dataPoints;
-  }
-
-  const colorPalette: ISandboxExtendedColorPalette = host.colorPalette;
-
-  const prop: DataViewObjectPropertyIdentifier = {
-    objectName: "legendColorSelector",
-    propertyName: "fill"
-  };
-
-  const uniqueValues = [...new Set(legendCategory.values.map(v => `${v}`))];
-
-  uniqueValues.forEach((value, idx) => {
-
-    const selectionId = host.createSelectionIdBuilder()
-      .withCategory(legendCategory, legendCategory.values.indexOf(value))
-      .createSelectionId();
-
-    const obj = legendCategory.objects?.[
-      legendCategory.values.findIndex(v => `${v}` === value)
-    ];
-
-    const fill = obj
-      ? dataViewObjects.getValue<Fill>(obj, prop)
-      : null;
-
-    const color =
-      fill?.solid?.color ??
-      colorPalette.getColor(value).value;
-
-    dataPoints.push({
-      legend: value,
-      color,
-      selectionId,
-      index: idx
-    });
-  });
-
-  return dataPoints;
-}
-
-
 
 function getColumnColorByIndex(
   category: DataViewCategoryColumn,
@@ -278,7 +216,7 @@ export class Visual implements IVisual {
   private startName: string = "Start Date";
   private endName: string = "End Date";
   private parentName: string = "Parent";
-
+  private legendColorStore = new Map<string, string>();
 
   private computeInnerW(format: FormatType, start: Date, end: Date, width: number, margin: { left: number; right: number; }): number {
     const diffInDays = d3.timeDay.count(start, end);
@@ -356,40 +294,138 @@ export class Visual implements IVisual {
   }
 
   private getBarColor(rowKey: string, legendValue?: string): string {
+    if (rowKey.startsWith("G:")) {
+      const parentKey = rowKey.slice(2);
+      const dpParent = this.ganttdataPoints.find(p => p.parent === parentKey);
+      return dpParent?.color ?? "#72c0ffff";
+    }
 
-    console.log("GET BAR COLOR input", {
-      rowKey,
-      legendValue,
-      hasLegendData: this.legendDataPoints.length
-    });
-
-    if (this.legendDataPoints.length > 0 && legendValue) {
-      const dpLegend = this.legendDataPoints.find(l => l.legend === legendValue);
-
-      console.log("LEGEND LOOKUP", {
-        legendValue,
-        found: !!dpLegend,
-        color: dpLegend?.color
-      });
-
-      if (dpLegend) {
-        return dpLegend.color;
+    if (legendValue && this.legendDataPoints.length > 0) {
+      const legendDP = this.legendDataPoints.find(dp => dp.legend === String(legendValue));
+      if (legendDP?.color) {
+        return legendDP.color;
       }
     }
 
-    const key = rowKey.split("|")[1];
-    const dpParent = this.ganttdataPoints.find(p => p.parent === key);
-
-    console.log("PARENT FALLBACK", {
-      parentKey: key,
-      found: !!dpParent,
-      color: dpParent?.color
-    });
+    const parentKey = rowKey.includes("|") ? rowKey.split("|")[1] : undefined;
+    const dpParent = parentKey
+      ? this.ganttdataPoints.find(p => p.parent === parentKey)
+      : undefined;
 
     return dpParent?.color ?? "#72c0ffff";
   }
 
+  private createLegendDataPoints(
+    options: VisualUpdateOptions
+  ): LegendDataPoint[] {
 
+    const dataPoints: LegendDataPoint[] = [];
+    const dv = options.dataViews?.[0];
+    const categorical = dv?.categorical;
+
+    if (!categorical?.categories) {
+      return dataPoints;
+    }
+
+    const legendCategory = categorical.categories.find(c => c.source.roles?.legend);
+    if (!legendCategory) {
+      return dataPoints;
+    }
+
+    const colorPalette = this.host.colorPalette;
+
+    const prop: DataViewObjectPropertyIdentifier = {
+      objectName: "legendColorSelector",
+      propertyName: "fill"
+    };
+
+    const colorChangesByValue = new Map<string, string>();
+
+    legendCategory.values.forEach((v, i) => {
+      const key = String(v);
+      const obj = legendCategory.objects?.[i];
+      
+      if (obj) {
+        const fill = dataViewObjects.getValue<Fill>(obj, prop);
+        if (fill?.solid?.color) {
+          const currentStored = this.legendColorStore.get(key);
+          
+          if (currentStored !== fill.solid.color) {
+            console.log(`Color cambió para "${key}": ${currentStored} -> ${fill.solid.color}`);
+            this.legendColorStore.set(key, fill.solid.color);
+            colorChangesByValue.set(key, fill.solid.color);
+          }
+        }
+      }
+    });
+
+    if (colorChangesByValue.size > 0) {
+      const updates: any[] = [];
+      
+      colorChangesByValue.forEach((newColor, legendValue) => {
+        legendCategory.values.forEach((v, i) => {
+          if (String(v) === legendValue) {
+            const selector = this.host.createSelectionIdBuilder()
+              .withCategory(legendCategory, i)
+              .createSelectionId()
+              .getSelector();
+
+            updates.push({
+              objectName: "legendColorSelector",
+              selector,
+              properties: {
+                fill: { solid: { color: newColor } }
+              }
+            });
+          }
+        });
+      });
+
+      if (updates.length > 0) {
+        console.log(`Sincronizando ${updates.length} colores...`);
+        this.host.persistProperties({ merge: updates });
+      }
+    }
+
+    const uniqueValues = new Set<string>();
+    const indexByLegend = new Map<string, number>();
+
+    legendCategory.values.forEach((v, i) => {
+      const key = String(v);
+      uniqueValues.add(key);
+
+      if (!indexByLegend.has(key)) {
+        indexByLegend.set(key, i);
+      }
+    });
+
+    uniqueValues.forEach((value) => {
+      const baseIndex = indexByLegend.get(value)!;
+
+      const selectionId = this.host.createSelectionIdBuilder()
+        .withCategory(legendCategory, baseIndex)
+        .createSelectionId();
+
+      let color: string;
+
+      if (this.legendColorStore.has(value)) {
+        color = this.legendColorStore.get(value)!;
+      } else {
+        color = colorPalette.getColor(value).value;
+        this.legendColorStore.set(value, color);
+      }
+
+      dataPoints.push({
+        legend: value,
+        color,
+        selectionId,
+        index: baseIndex,
+        formattingId: {} as FormattingId
+      });
+    });
+
+    return dataPoints;
+  }
 
   constructor(opts: VisualConstructorOptions) {
     this.container = opts.element as HTMLElement;
@@ -630,13 +666,12 @@ export class Visual implements IVisual {
 
 
     this.ganttdataPoints = createSelectorDataPoints(opts, this.host)
-    this.legendDataPoints = createLegendDataPoints(opts, this.host);
+    this.legendDataPoints = this.createLegendDataPoints(opts);
 
 
+    this.fmtSettings.populateColorSelector(this.ganttdataPoints);
     if (this.legendDataPoints.length > 0) {
       this.fmtSettings.populateLegendDataPointSlices(this.legendDataPoints);
-    } else {
-      this.fmtSettings.populateColorSelector(this.ganttdataPoints);
     }
 
     const { width, height } = opts.viewport;

@@ -11,7 +11,7 @@
     {"displayName":"Predecessor","name":"predecessor","kind":"GroupingOrMeasure"},
     {"displayName":"Completion","name":"completion","kind":"Measure"},
     {"displayName":"Tooltips","name":"tooltips","kind":"Measure"},
-    {"displayName": "Legend", "name": "legend", "kind": "Grouping"}
+    {"displayName": "Legend", "name": "legend", "kind": "GroupingOrMeasure"}
   ],
   "dataViewMappings":[{
     "conditions":[{
