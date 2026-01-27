@@ -1,9 +1,20 @@
 import * as d3 from "d3";
 
-export function renderLanding(width: number, height: number) {
-    this.landingG.attr("display", null).selectAll("*").remove();
+interface LandingSection {
+    title: string;
+    items: string[];
+}
 
-    const bg = this.landingG.append("defs")
+interface RenderLandingParams {
+    svg: d3.Selection<SVGGElement, unknown, null, undefined>;
+    width: number;
+    height: number;
+}
+
+export function renderLanding({ svg, width, height }: RenderLandingParams): void {
+    svg.attr("display", null).selectAll("*").remove();
+
+    const bg = svg.append("defs")
         .append("linearGradient")
         .attr("id", "landing-bg")
         .attr("x1", "0%").attr("y1", "0%")
@@ -11,12 +22,12 @@ export function renderLanding(width: number, height: number) {
     bg.append("stop").attr("offset", "0%").attr("stop-color", "#fdfdfd");
     bg.append("stop").attr("offset", "100%").attr("stop-color", "#f0f0f5");
 
-    this.landingG.append("rect")
+    svg.append("rect")
         .attr("width", width)
         .attr("height", height)
         .attr("fill", "url(#landing-bg)");
 
-    this.landingG.append("text")
+    svg.append("text")
         .text("📊 Gantt Visual – Guía rápida")
         .attr("x", width / 2)
         .attr("y", 50)
@@ -26,7 +37,7 @@ export function renderLanding(width: number, height: number) {
         .attr("font-family", "Segoe UI")
         .attr("font-weight", "bold");
 
-    const sections: { title: string; items: string[] }[] = [
+    const sections: LandingSection[] = [
         {
             title: "Campos obligatorios",
             items: [
@@ -58,7 +69,7 @@ export function renderLanding(width: number, height: number) {
     const lineHeight = 24;
 
     sections.forEach(section => {
-        this.landingG.append("text")
+        svg.append("text")
             .text(section.title)
             .attr("x", 40)
             .attr("y", y)
@@ -69,7 +80,7 @@ export function renderLanding(width: number, height: number) {
         y += lineHeight;
 
         section.items.forEach(item => {
-            this.landingG.append("text")
+            svg.append("text")
                 .text(item)
                 .attr("x", 60)
                 .attr("y", y)
@@ -82,7 +93,7 @@ export function renderLanding(width: number, height: number) {
         y += 10;
     });
 
-    this.landingG.append("text")
+    svg.append("text")
         .text("💡 Tip: Arrastrá y soltá campos en el panel de Power BI")
         .attr("x", width / 2)
         .attr("y", height - 55)
@@ -92,7 +103,7 @@ export function renderLanding(width: number, height: number) {
         .attr("font-family", "Segoe UI")
         .attr("font-style", "italic");
 
-    this.landingG.append("text")
+    svg.append("text")
         .text("📧 Contacto: nicolas.pastorini@set.ypf.com")
         .attr("x", width / 2)
         .attr("y", height - 30)

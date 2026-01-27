@@ -14,6 +14,7 @@ import { dataViewObjects } from "powerbi-visuals-utils-dataviewutils";
 import { legend } from "powerbi-visuals-utils-chartutils";
 import { renderXAxisBottom } from "./components/xAxis/renderXAxisBottom";
 import { renderXAxisTop } from "./components/xAxis/renderXAxisTop";
+import { renderLanding } from "./components/renderLanding";
 // powerbi.visuals
 import IVisual = powerbi.extensibility.IVisual;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
@@ -343,11 +344,9 @@ export class Visual implements IVisual {
           const color = colorMap[legendValue];
           if (color && typeof color === 'string') {
             this.legendColorStore.set(legendValue, color);
-            console.log(`✅ Cargado desde metadata: "${legendValue}" = ${color}`);
           }
         });
       } catch (e) {
-        console.error("Error al parsear colorMap:", e);
       }
     }
 
@@ -361,16 +360,15 @@ export class Visual implements IVisual {
 
     legendCategory.values.forEach((v, i) => {
       const key = String(v);
-      
+
       const obj = legendCategory.objects?.[i];
-      
+
       if (obj) {
         const fill = dataViewObjects.getValue<Fill>(obj, prop);
         if (fill?.solid?.color) {
           const currentStored = this.legendColorStore.get(key);
-          
+
           if (currentStored !== fill.solid.color) {
-            console.log(`🔄 Color cambió para "${key}": ${currentStored} -> ${fill.solid.color}`);
             this.legendColorStore.set(key, fill.solid.color);
             colorChangesByValue.set(key, fill.solid.color);
           }
@@ -381,13 +379,13 @@ export class Visual implements IVisual {
     // 🔹 PASO 3: Si hay cambios, persistir TODO el estado como JSON
     if (colorChangesByValue.size > 0) {
       const updates: any[] = [];
-      
+
       // Construir el mapa completo de colores
       const colorMapObject: any = {};
       this.legendColorStore.forEach((color, legendValue) => {
         colorMapObject[legendValue] = color;
       });
-      
+
       // Actualizar los selectores individuales solo para los valores cambiados
       colorChangesByValue.forEach((newColor, legendValue) => {
         legendCategory.values.forEach((v, i) => {
@@ -416,8 +414,6 @@ export class Visual implements IVisual {
           colorMap: JSON.stringify(colorMapObject)
         }
       });
-
-      console.log(`💾 Persistiendo ${Object.keys(colorMapObject).length} colores:`, colorMapObject);
       this.host.persistProperties({ merge: updates });
     }
 
@@ -446,19 +442,17 @@ export class Visual implements IVisual {
       // Primero intentar obtener del store (que ya tiene los guardados)
       if (this.legendColorStore.has(value)) {
         color = this.legendColorStore.get(value)!;
-        console.log(`🎨 Usando color del store para "${value}": ${color}`);
       } else {
         // Si no existe, generar uno nuevo
         color = colorPalette.getColor(value).value;
         this.legendColorStore.set(value, color);
-        console.log(`🆕 Generando nuevo color para "${value}": ${color}`);
-        
+
         // 🔹 Guardar inmediatamente el nuevo color
         const updatedColorMap: any = {};
         this.legendColorStore.forEach((c, k) => {
           updatedColorMap[k] = c;
         });
-        
+
         this.host.persistProperties({
           merge: [{
             objectName: "legendColorState",
@@ -756,8 +750,9 @@ export class Visual implements IVisual {
       .style("white-space", "normal");
 
 
-    const hasData = Boolean(dv?.categorical?.categories?.length) &&
-      (dv?.categorical?.values?.length ?? 0) >= 2;
+    const hasData = dv?.categorical?.categories?.some(c => c.source.roles?.task) &&
+      dv?.categorical?.values?.some(v => v.source.roles?.startDate) &&
+      dv?.categorical?.values?.some(v => v.source.roles?.endDate);
 
     this.leftBtns.style("display", hasData ? "block" : "none");
     this.rightBtns.style("display", hasData ? "block" : "none");
@@ -2036,106 +2031,11 @@ export class Visual implements IVisual {
   }
 
   private renderLanding(width: number, height: number) {
-    this.landingG.attr("display", null).selectAll("*").remove();
-
-    const bg = this.landingG.append("defs")
-      .append("linearGradient")
-      .attr("id", "landing-bg")
-      .attr("x1", "0%").attr("y1", "0%")
-      .attr("x2", "0%").attr("y2", "100%");
-    bg.append("stop").attr("offset", "0%").attr("stop-color", "#fdfdfd");
-    bg.append("stop").attr("offset", "100%").attr("stop-color", "#f0f0f5");
-
-    this.landingG.append("rect")
-      .attr("width", width)
-      .attr("height", height)
-      .attr("fill", "url(#landing-bg)");
-
-    this.landingG.append("text")
-      .text("📊 Gantt Visual – Guía rápida")
-      .attr("x", width / 2)
-      .attr("y", 50)
-      .attr("text-anchor", "middle")
-      .attr("fill", "#2c3e50")
-      .attr("font-size", 26)
-      .attr("font-family", "Segoe UI")
-      .attr("font-weight", "bold");
-
-    const sections: { title: string; items: string[] }[] = [
-      {
-        title: "Campos obligatorios",
-        items: [
-          "📝 Task (Texto) → Nombre de la tarea",
-          "📂 Parent (Texto) → Agrupador o categoría",
-          "⏳ Start Date (Fecha) → Inicio",
-          "🏁 End Date (Fecha) → Fin"
-        ]
-      },
-      {
-        title: "Opcionales",
-        items: [
-          "🔄 Secondary Start/End (Fecha) → Intervalo extra",
-          "📏 Duration (Número) → Días/horas",
-          "🔗 Predecessor (Texto/Número) → Dependencias",
-          "✅ Completion (Número %) → Avance de la tarea"
-        ]
-      },
-      {
-        title: "Extras",
-        items: [
-          "➕ Columns (Texto/Número) → Campos adicionales",
-          "💡 Tooltips (Cualquier tipo) → Info al pasar el mouse"
-        ]
-      }
-    ];
-
-    let y = 100;
-    const lineHeight = 24;
-
-    sections.forEach(section => {
-      this.landingG.append("text")
-        .text(section.title)
-        .attr("x", 40)
-        .attr("y", y)
-        .attr("fill", "#34495e")
-        .attr("font-size", 18)
-        .attr("font-family", "Segoe UI")
-        .attr("font-weight", "bold");
-      y += lineHeight;
-
-      section.items.forEach(item => {
-        this.landingG.append("text")
-          .text(item)
-          .attr("x", 60)
-          .attr("y", y)
-          .attr("fill", "#555")
-          .attr("font-size", 15)
-          .attr("font-family", "Segoe UI");
-        y += lineHeight;
-      });
-
-      y += 10;
+    renderLanding({
+      svg: this.landingG,
+      width,
+      height
     });
-
-    this.landingG.append("text")
-      .text("💡 Tip: Arrastrá y soltá campos en el panel de Power BI")
-      .attr("x", width / 2)
-      .attr("y", height - 55)
-      .attr("text-anchor", "middle")
-      .attr("fill", "#888")
-      .attr("font-size", 14)
-      .attr("font-family", "Segoe UI")
-      .attr("font-style", "italic");
-
-    this.landingG.append("text")
-      .text("📧 Contacto: nicolas.pastorini@set.ypf.com")
-      .attr("x", width / 2)
-      .attr("y", height - 30)
-      .attr("text-anchor", "middle")
-      .attr("fill", "#2c3e50")
-      .attr("font-size", 15)
-      .attr("font-family", "Segoe UI")
-      .attr("font-weight", "bold");
   }
 
   public getFormattingModel(): powerbi.visuals.FormattingModel {
