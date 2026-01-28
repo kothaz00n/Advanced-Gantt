@@ -21,13 +21,20 @@
       "columns":{"max":5}
     }],
     "categorical":{
-      "categories":{"select":[
-        {"bind":{"to":"task"}},
-        {"bind":{"to":"parent"}},
-        {"bind":{"to":"legend"}},
-        {"bind":{"to":"predecessor"}},
-        {"for":{"in":"columns"}}
-      ]},
+      "categories":{
+        "dataReductionAlgorithm": {
+          "top": {
+            "count": 9999999999
+          }
+        },
+        "select":[
+          {"bind":{"to":"task"}},
+          {"bind":{"to":"parent"}},
+          {"bind":{"to":"legend"}},
+          {"bind":{"to":"predecessor"}},
+          {"for":{"in":"columns"}}
+        ]
+      },
       "values":{"select":[
         {"bind":{"to":"startDate"}},
         {"bind":{"to":"endDate"}},
@@ -131,16 +138,16 @@
       "legendColorMap":{"displayName":"Legend color map","type":{"text":true}}
     }},
     "legendColorState": {
-  "displayName": "Legend Color State",
-  "properties": {
-    "colorMap": {
-      "displayName": "Color Map",
-      "type": {
-        "text": true
+      "displayName": "Legend Color State",
+      "properties": {
+        "colorMap": {
+          "displayName": "Color Map",
+          "type": {
+            "text": true
+          }
+        }
       }
     }
-  }
-}
   },
   "tooltips":{
     "supportedTypes":{"default":true,"canvas":true,"page":true},
