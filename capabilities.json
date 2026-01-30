@@ -24,7 +24,7 @@
       "categories":{
         "dataReductionAlgorithm": {
           "top": {
-            "count": 30000
+            "count": 3000
           }
         },
         "select":[
@@ -161,5 +161,5 @@
   "supportsMultiVisualSelection":true,
   "sorting":{"default":{}},
   "drilldown":{"roles":["task","parent"]},
-  "privileges":[]
+  "privileges": [ { "name": "WebAccess", "essential": true } ]
 }

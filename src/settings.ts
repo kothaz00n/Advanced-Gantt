@@ -24,9 +24,7 @@ class LegendDataPointCardSettings extends SimpleCard {
     slices: Slice[] = [];
 }
 
-/* ────────────────────────────────
-   EJE Y
-──────────────────────────────── */
+/*EJE Y ─────── */
 class AxisYCardSettings extends SimpleCard {
 
     name = "axisY";
@@ -138,9 +136,7 @@ class LegendCardSettings extends formattingSettings.SimpleCard {
         this.titleText
     ];
 }
-/* ────────────────────────────────
-   EJE X
-──────────────────────────────── */
+/* ───── EJE X ─────────── */
 class AxisXCardSettings extends SimpleCard {
     name: string = "axisXCard";
     displayName: string = "Eje X";
@@ -190,9 +186,7 @@ class AxisXCardSettings extends SimpleCard {
     public slices: formattingSettings.Slice[] = [this.font];
 }
 
-/* ────────────────────────────────
-   BARRAS
-──────────────────────────────── */
+/* ────── BARRAS ───────────── */
 class BarLabelStyleGroup extends SimpleCard {
     name: string = "BarLabelStyleGroup";
     displayName: string = "Etiqueta";
@@ -389,9 +383,7 @@ class TimeMarkerCardSettings extends CompositeCard {
     groups: formattingSettings.Group[] = [this.todayGroup];
 }
 
-/* ────────────────────────────────
-   Encabezados
-──────────────────────────────── */
+/* ─────── Encabezados  ─────────────── */
 class HeaderCardSettings extends SimpleCard {
     show = new ToggleSwitch({
         name: "show",
@@ -428,9 +420,7 @@ class HeaderCardSettings extends SimpleCard {
     slices: FormattingSettingsSlice[] = [this.show, this.fontColor, this.backgroundColor, this.fontSize, this.fontFamily];
 }
 
-/* ────────────────────────────────
-   Tareas
-──────────────────────────────── */
+/* ── Tareas  ────────── */
 class TaskCardSetting extends SimpleCard {
     show = new ToggleSwitch({
         name: "show",
@@ -509,9 +499,7 @@ class TaskCardSetting extends SimpleCard {
     slices: FormattingSettingsSlice[] = [this.show, this.showSecondaryColumns, this.taskHeight, this.fontColor, this.fontSize, this.fontFamily, this.taskWidth, this.startWidth, this.endWidth, this.secStartWidth, this.secEndWidth];
 }
 
-/* ────────────────────────────────
-   Parent
-──────────────────────────────── */
+/* ────────────── Parent ───────────────────── */
 class ParentCardSetting extends SimpleCard {
     show = new ToggleSwitch({
         name: "show",
@@ -544,9 +532,7 @@ class ParentCardSetting extends SimpleCard {
     displayName = "Parent";
     slices: FormattingSettingsSlice[] = [this.show, this.fontColor, this.backgroundColor, this.fontSize, this.fontFamily];
 }
-/* ______________________
-      Weekend
-____________________*/
+/* ___ Weekend _____________*/
 class WeekendCardSettings extends SimpleCard {
     show = new ToggleSwitch({
         name: "show",
@@ -562,9 +548,7 @@ class WeekendCardSettings extends SimpleCard {
     displayName = "Weekend";
     slices: formattingSettings.Slice[] = [this.show, this.markerColor]
 }
-/* ______________________
-      Completion Label
-____________________*/
+/* ___ Completion Label _____________*/
 class completionCardSettings extends SimpleCard {
     name: string = "completionStyleGroup";
     displayName: string = "Etiqueta % de completado";
@@ -613,9 +597,7 @@ class completionCardSettings extends SimpleCard {
 
     public slices: formattingSettings.Slice[] = [this.font];
 }
-/* ────────────────────────────────
-   MODELO GLOBAL
-──────────────────────────────── */
+/* MODELO GLOBAL*/
 export class VisualFormattingSettingsModel extends Model {
     axisYCard = new AxisYCardSettings();
     axisXCard = new AxisXCardSettings();

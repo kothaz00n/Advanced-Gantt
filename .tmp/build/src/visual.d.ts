@@ -42,7 +42,6 @@ export declare class Visual implements IVisual {
     private rightBtns;
     private leftG;
     private ganttG;
-    private linesG;
     private landingG;
     private xAxisFixedG;
     private xAxisFixedDiv;
@@ -75,12 +74,14 @@ export declare class Visual implements IVisual {
     private secondaryStartName;
     private secondaryEndName;
     private selectionManager;
-    private selectionIdMap;
     private selectedIds;
     private startName;
     private endName;
     private parentName;
     private legendColorStore;
+    private dateFormatter;
+    private computedColWidths;
+    private updateBarOpacities;
     private computeInnerW;
     private getBarColor;
     private createLegendDataPoints;

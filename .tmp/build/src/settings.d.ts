@@ -34,7 +34,7 @@ declare class LegendCardSettings extends formattingSettings.SimpleCard {
     titleText: formattingSettings.TextInput;
     name: string;
     displayName: string;
-    slices: (formattingSettings.NumUpDown | formattingSettings.ToggleSwitch | formattingSettings.ColorPicker | formattingSettings.ItemDropdown | formattingSettings.TextInput)[];
+    slices: (formattingSettings.ToggleSwitch | formattingSettings.NumUpDown | formattingSettings.ColorPicker | formattingSettings.ItemDropdown | formattingSettings.TextInput)[];
 }
 declare class AxisXCardSettings extends SimpleCard {
     name: string;

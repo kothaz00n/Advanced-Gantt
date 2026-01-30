@@ -175,7 +175,6 @@ export class Visual implements IVisual {
   private rightBtns: d3.Selection<HTMLDivElement, unknown, null, undefined>;
   private leftG: d3.Selection<SVGGElement, unknown, null, undefined>;
   private ganttG: d3.Selection<SVGGElement, unknown, null, undefined>;
-  private linesG: d3.Selection<SVGGElement, unknown, null, undefined>;
   private landingG: d3.Selection<SVGGElement, unknown, null, undefined>;
   private xAxisFixedG: d3.Selection<SVGGElement, unknown, null, undefined>;
   private xAxisFixedDiv: d3.Selection<HTMLDivElement, unknown, null, undefined>;
@@ -213,12 +212,48 @@ export class Visual implements IVisual {
   private secondaryStartName: string = "Inicio R";
   private secondaryEndName: string = "Fin R";
   private selectionManager: ISelectionManager;
-  private selectionIdMap: Map<string, ISelectionId>;
   private selectedIds: ISelectionId[] = [];
   private startName: string = "Start Date";
   private endName: string = "End Date";
   private parentName: string = "Parent";
   private legendColorStore = new Map<string, string>();
+  private dateFormatter = d3.timeFormat("%d/%m/%Y %H:%M");
+  private computedColWidths: number[] | null = null;
+
+  private updateBarOpacities() {
+    const hasSelection = this.selectedIds.length > 0;
+
+    this.ganttG.selectAll<SVGElement, BarDatum>(".bar").attr("opacity", d => {
+      if (!hasSelection) return 1;
+      return this.selectedIds.some(sel => sel.getKey() === d.selectionId.getKey()) ? 1 : 0.3;
+    });
+
+    this.ganttG.selectAll<SVGElement, BarDatum>(".completion-bar").attr("opacity", d => {
+      if (!hasSelection) return 1;
+      return this.selectedIds.some(sel => sel.getKey() === d.selectionId.getKey()) ? 1 : 0.3;
+    });
+
+    this.ganttG.selectAll<SVGElement, BarDatum>(".bar-secondary").attr("opacity", d => {
+      if (!hasSelection) return 1;
+      return this.selectedIds.some(sel => sel.getKey() === d.selectionId.getKey()) ? 1 : 0.3;
+    });
+
+    // 👇 AÑADE ESTA SECCIÓN
+    this.ganttG.selectAll<SVGElement, BarDatum>(".bar-secondary-end-marker").attr("opacity", d => {
+      if (!hasSelection) return 1;
+      return this.selectedIds.some(sel => sel.getKey() === d.selectionId.getKey()) ? 1 : 0.3;
+    });
+
+    this.ganttG.selectAll<SVGElement, BarDatum>(".duration-label").attr("opacity", d => {
+      if (!hasSelection) return 1;
+      return this.selectedIds.some(sel => sel.getKey() === d.selectionId.getKey()) ? 1 : 0.3;
+    });
+
+    this.ganttG.selectAll<SVGElement, BarDatum>(".completion-label").attr("opacity", d => {
+      if (!hasSelection) return 1;
+      return this.selectedIds.some(sel => sel.getKey() === d.selectionId.getKey()) ? 1 : 0.3;
+    });
+  }
 
   private computeInnerW(format: FormatType, start: Date, end: Date, width: number, margin: { left: number; right: number; }): number {
     const diffInDays = d3.timeDay.count(start, end);
@@ -307,19 +342,20 @@ export class Visual implements IVisual {
       propertyName: "fill"
     };
 
-    // 🔹 PASO 2: Procesar valores actuales y detectar cambios
     const colorChangesByValue = new Map<string, string>();
+    const indexByValue = new Map<string, number>();
 
     legendCategory.values.forEach((v, i) => {
       const key = String(v);
+      if (!indexByValue.has(key)) {
+        indexByValue.set(key, i);
+      }
 
       const obj = legendCategory.objects?.[i];
-
       if (obj) {
         const fill = dataViewObjects.getValue<Fill>(obj, prop);
         if (fill?.solid?.color) {
           const currentStored = this.legendColorStore.get(key);
-
           if (currentStored !== fill.solid.color) {
             this.legendColorStore.set(key, fill.solid.color);
             colorChangesByValue.set(key, fill.solid.color);
@@ -328,37 +364,32 @@ export class Visual implements IVisual {
       }
     });
 
-    // 🔹 PASO 3: Si hay cambios, persistir TODO el estado como JSON
     if (colorChangesByValue.size > 0) {
       const updates: any[] = [];
-
-      // Construir el mapa completo de colores
       const colorMapObject: any = {};
+
       this.legendColorStore.forEach((color, legendValue) => {
         colorMapObject[legendValue] = color;
       });
 
-      // Actualizar los selectores individuales solo para los valores cambiados
       colorChangesByValue.forEach((newColor, legendValue) => {
-        legendCategory.values.forEach((v, i) => {
-          if (String(v) === legendValue) {
-            const selector = this.host.createSelectionIdBuilder()
-              .withCategory(legendCategory, i)
-              .createSelectionId()
-              .getSelector();
+        const idx = indexByValue.get(legendValue);
+        if (idx !== undefined) {
+          const selector = this.host.createSelectionIdBuilder()
+            .withCategory(legendCategory, idx)
+            .createSelectionId()
+            .getSelector();
 
-            updates.push({
-              objectName: "legendColorSelector",
-              selector,
-              properties: {
-                fill: { solid: { color: newColor } }
-              }
-            });
-          }
-        });
+          updates.push({
+            objectName: "legendColorSelector",
+            selector,
+            properties: {
+              fill: { solid: { color: newColor } }
+            }
+          });
+        }
       });
 
-      // 🔹 Guardar estado global como JSON string
       updates.push({
         objectName: "legendColorState",
         selector: null,
@@ -366,6 +397,7 @@ export class Visual implements IVisual {
           colorMap: JSON.stringify(colorMapObject)
         }
       });
+
       this.host.persistProperties({ merge: updates });
     }
 
@@ -438,7 +470,6 @@ export class Visual implements IVisual {
     );
 
     this.selectionManager = this.host.createSelectionManager();
-    this.selectionIdMap = new Map();
 
     const headerWrapper = d3.select(this.container)
       .append("div")
@@ -452,7 +483,7 @@ export class Visual implements IVisual {
 
     this.legend = legend.createLegend(
       legendWrapper.node() as HTMLElement,
-      false,
+      true,
       null
     );
 
@@ -577,7 +608,6 @@ export class Visual implements IVisual {
 
     this.leftG = this.yAxisSVG.append("g");
     this.ganttG = this.ganttSVG.append("g");
-    this.linesG = this.ganttG.append("g").attr("class", "y-grid");
     this.landingG = this.ganttSVG.append("g")
       .attr("class", "landing")
       .style("pointer-events", "none");
@@ -585,8 +615,7 @@ export class Visual implements IVisual {
     d3.select(this.container).on("click", () => {
       this.selectionManager.clear().then(() => {
         this.selectedIds = [];
-        const bars = this.ganttG.selectAll<SVGElement, BarDatum>(".bar, .completion-bar");
-        bars.attr("opacity", 1);
+        this.updateBarOpacities();
       });
     });
   }
@@ -601,6 +630,12 @@ export class Visual implements IVisual {
 
 
     const isDataUpdate = (opts.type & powerbi.VisualUpdateType.Data) !== 0;
+    const isResizeOnly = opts.type === powerbi.VisualUpdateType.Resize;
+    const isViewportChange = opts.type === powerbi.VisualUpdateType.ViewMode;
+
+    if (this.ganttG && !isDataUpdate && !isResizeOnly && !isViewportChange) {
+      return;
+    }
     if (isDataUpdate) {
       preserveView = true;
 
@@ -716,23 +751,29 @@ export class Visual implements IVisual {
     const hasD = this.cacheTasks.some(t => t.fields.length > this.taskColCount);
     const extraColCount = this.cacheTasks[0]?.extraCols?.length ?? 0;
 
-    const colWidths: number[] = [];
-    colWidths.push(this.fmtSettings.taskCard.taskWidth.value);
-    colWidths.push(this.fmtSettings.taskCard.startWidth.value);
-    colWidths.push(this.fmtSettings.taskCard.endWidth.value);
-
-    for (let i = 0; i < extraColCount; i++) {
-      colWidths.push(150);
-    }
-
-    if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
+    if (!this.computedColWidths || this.computedColWidths.length !== (this.taskColCount + 2 + extraColCount + (this.fmtSettings.taskCard.showSecondaryColumns.value ? 2 : 0) + (hasD ? 1 : 0))) {
+      const colWidths: number[] = [];
+      colWidths.push(this.fmtSettings.taskCard.taskWidth.value);
       colWidths.push(this.fmtSettings.taskCard.startWidth.value);
       colWidths.push(this.fmtSettings.taskCard.endWidth.value);
+
+      for (let i = 0; i < extraColCount; i++) {
+        colWidths.push(150);
+      }
+
+      if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
+        colWidths.push(this.fmtSettings.taskCard.startWidth.value);
+        colWidths.push(this.fmtSettings.taskCard.endWidth.value);
+      }
+
+      if (hasD) {
+        colWidths.push(100);
+      }
+
+      this.computedColWidths = colWidths;
     }
 
-    if (hasD) {
-      colWidths.push(100);
-    }
+    const colWidths = this.computedColWidths;
 
     this.width = opts.viewport.width;
     this.marginLeft = pad + colWidths.reduce((acc, w) => acc + w, 0);
@@ -747,6 +788,12 @@ export class Visual implements IVisual {
     this.yAxisSVG.selectAll("*").remove();
     this.ganttSVG.selectAll("*").remove();
     this.xAxisFixedG.selectAll("*").remove();
+
+    if (this.ganttG) {
+      this.ganttG.selectAll("line.day").remove();
+      this.ganttG.selectAll("rect.weekend").remove();
+      this.ganttG.selectAll("line.month").remove();
+    }
 
     if (!hasData) {
       this.landingG = this.ganttSVG.append("g")
@@ -859,13 +906,13 @@ export class Visual implements IVisual {
 
         this.currentZoomTransform = t;
 
-        this.redrawZoomedElements(newX, this.y, this.barH);
-
         const newFormat = this.updateSelectedFormatFromZoom(t, width);
         if (newFormat !== this.selectedFormat) {
           this.selectedFormat = newFormat;
           this.updateFormatButtonsUI(this.selectedFormat);
         }
+
+        this.redrawZoomedElements(newX, this.y, this.barH);
 
         renderXAxisTop({
           xScale: newX,
@@ -896,61 +943,56 @@ export class Visual implements IVisual {
       .on("touchstart.zoom", null);
 
     this.ganttSVG
-  .on("dblclick", () => {
-    // Obtener el rango real de fechas de todas las tareas
-    const validTasks = this.cacheTasks.filter(t => t.start && t.end);
-    
-    if (validTasks.length === 0) return;
+      .on("dblclick", () => {
+        const validTasks = this.cacheTasks.filter(t => t.start && t.end);
 
-    const minDate = d3.min(validTasks, t => t.start)!;
-    const maxDate = d3.max(validTasks, t => t.end)!;
-    
-    // Calcular duración promedio para elegir formato óptimo
-    const taskDurations = validTasks.map(t => d3.timeDay.count(t.start!, t.end!));
-    const avgDuration = d3.mean(taskDurations) ?? 30;
+        if (validTasks.length === 0) return;
 
-    let optimalFormat: FormatType;
+        const minDate = d3.min(validTasks, t => t.start)!;
+        const maxDate = d3.max(validTasks, t => t.end)!;
+        const taskDurations = validTasks.map(t => d3.timeDay.count(t.start!, t.end!));
+        const avgDuration = d3.mean(taskDurations) ?? 30;
 
-    if (avgDuration <= 2) {
-      optimalFormat = "Día";
-    } else if (avgDuration <= 15) {
-      optimalFormat = "Día";
-    } else if (avgDuration <= 90) {
-      optimalFormat = "Mes";
-    } else {
-      optimalFormat = "Mes";
-    }
+        let optimalFormat: FormatType;
 
-    // Usar el rango real (min-max) de las tareas
-    const startDate = minDate;
-    const endDate = maxDate;
-
-    const visibleW = this.width - this.marginLeft;
-    const rangeWidth = this.xOriginal(endDate) - this.xOriginal(startDate);
-    const scale = visibleW / rangeWidth;
-    const firstBarX = this.xOriginal(startDate);
-    const translateX = -firstBarX * scale + 20;
-
-    const targetTransform = d3.zoomIdentity
-      .translate(translateX, 0)
-      .scale(scale);
-
-    this.ganttSVG.transition()
-      .duration(500)
-      .call(this.zoomBehavior.transform, targetTransform);
-
-    this.selectedFormat = optimalFormat;
-    this.updateFormatButtonsUI(this.selectedFormat);
-
-    this.ganttSVG.transition()
-      .delay(550)
-      .on("end", () => {
-        if (this.currentZoomTransform) {
-          const newX = this.currentZoomTransform.rescaleX(this.xOriginal);
-          this.redrawZoomedElements(newX, this.y, this.barH);
+        if (avgDuration <= 2) {
+          optimalFormat = "Día";
+        } else if (avgDuration <= 15) {
+          optimalFormat = "Día";
+        } else if (avgDuration <= 90) {
+          optimalFormat = "Mes";
+        } else {
+          optimalFormat = "Mes";
         }
+        const startDate = minDate;
+        const endDate = maxDate;
+
+        const visibleW = this.width - this.marginLeft;
+        const rangeWidth = this.xOriginal(endDate) - this.xOriginal(startDate);
+        const scale = visibleW / rangeWidth;
+        const firstBarX = this.xOriginal(startDate);
+        const translateX = -firstBarX * scale + 20;
+
+        const targetTransform = d3.zoomIdentity
+          .translate(translateX, 0)
+          .scale(scale);
+
+        this.ganttSVG.transition()
+          .duration(500)
+          .call(this.zoomBehavior.transform, targetTransform);
+
+        this.selectedFormat = optimalFormat;
+        this.updateFormatButtonsUI(this.selectedFormat);
+
+        this.ganttSVG.transition()
+          .delay(550)
+          .on("end", () => {
+            if (this.currentZoomTransform) {
+              const newX = this.currentZoomTransform.rescaleX(this.xOriginal);
+              this.redrawZoomedElements(newX, this.y, this.barH);
+            }
+          });
       });
-  });
 
 
     let rafPending = false;
@@ -989,19 +1031,19 @@ export class Visual implements IVisual {
       event.preventDefault();
     });
 
-    
-      const header = yAxisContentG.append("g")
-        .attr("class", "y-grid")
-        .selectAll("line")
-        .data(gridYPos)
-        .join("line")
-        .attr("x1", 0)
-        .attr("x2", margin.left)
-        .attr("y1", d => d)
-        .attr("y2", d => d)
-        .attr("stroke", this.fmtSettings.axisYCard.lineColor.value.value)
-        .attr("stroke-width", 1);
-if (headFmt.show.value) {
+
+    const header = yAxisContentG.append("g")
+      .attr("class", "y-grid")
+      .selectAll("line")
+      .data(gridYPos)
+      .join("line")
+      .attr("x1", 0)
+      .attr("x2", margin.left)
+      .attr("y1", d => d)
+      .attr("y2", d => d)
+      .attr("stroke", this.fmtSettings.axisYCard.lineColor.value.value)
+      .attr("stroke-width", 1);
+    if (headFmt.show.value) {
       const head = this.leftG.append("g")
         .attr("class", "header")
         .attr("transform", `translate(0, ${margin.top})`);
@@ -1101,7 +1143,6 @@ if (headFmt.show.value) {
       }
     }
 
-    const dateFmt = d3.timeFormat("%d/%m/%Y %H:%M");
     const self = this;
 
     const yScale = this.y
@@ -1159,7 +1200,7 @@ if (headFmt.show.value) {
 
           const r = self.groupRange.get(row.id);
           if (r) {
-            g.append("text").text(dateFmt(r.start))
+            g.append("text").text(self.dateFormatter(r.start))
               .attr("x", colX(self.taskColCount))
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-weight", "bold")
@@ -1168,7 +1209,7 @@ if (headFmt.show.value) {
               .attr("data-rowKey", row.rowKey)
               .attr("font-family", parFmt.fontFamily.value);
 
-            g.append("text").text(dateFmt(r.end))
+            g.append("text").text(self.dateFormatter(r.end))
               .attr("x", colX(self.taskColCount + 1))
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-weight", "bold")
@@ -1179,7 +1220,7 @@ if (headFmt.show.value) {
 
             if (self.fmtSettings.taskCard.showSecondaryColumns.value) {
               if (r.secondaryStart) {
-                g.append("text").text(dateFmt(r.secondaryStart))
+                g.append("text").text(self.dateFormatter(r.secondaryStart))
                   .attr("x", colX(self.taskColCount + 2))
                   .attr("y", top + yScale.bandwidth() / 2 + 4)
                   .attr("font-weight", "bold")
@@ -1189,7 +1230,7 @@ if (headFmt.show.value) {
                   .attr("font-family", parFmt.fontFamily.value);
               }
               if (r.secondaryEnd) {
-                g.append("text").text(dateFmt(r.secondaryEnd))
+                g.append("text").text(self.dateFormatter(r.secondaryEnd))
                   .attr("x", colX(self.taskColCount + 3))
                   .attr("y", top + yScale.bandwidth() / 2 + 4)
                   .attr("font-weight", "bold")
@@ -1226,7 +1267,7 @@ if (headFmt.show.value) {
                   const firstVal = vals[0] as string;
                   const d = new Date(firstVal);
                   if (!isNaN(d.getTime())) {
-                    aggVal = d3.timeFormat("%d/%m/%Y %H:%M")(d);
+                    aggVal = self.dateFormatter(d);
                   } else {
                     aggVal = [...new Set(vals)].join(", ");
                   }
@@ -1255,8 +1296,6 @@ if (headFmt.show.value) {
           const durationIndex = hasDuration ? row.task.fields.length - 1 : -1;
           const showSecondaryColumns = self.fmtSettings.taskCard.showSecondaryColumns.value;
 
-          const dateFmt = d3.timeFormat("%d/%m/%Y %H:%M");
-
           row.task.fields.forEach((val, i) => {
             if (hasDuration && i === durationIndex) return;
 
@@ -1284,7 +1323,7 @@ if (headFmt.show.value) {
 
           // === Inicio P ===
           g.append("text")
-            .text(row.task.start && !isNaN(row.task.start.getTime()) ? dateFmt(row.task.start) : " ")
+            .text(row.task.start && !isNaN(row.task.start.getTime()) ? self.dateFormatter(row.task.start) : " ")
             .attr("x", colX(self.taskColCount))
             .attr("y", top + yScale.bandwidth() / 2 + 4)
             .attr("font-size", taskFmt.fontSize.value)
@@ -1294,7 +1333,7 @@ if (headFmt.show.value) {
 
           // === Fin P ===
           g.append("text")
-            .text(row.task.end && !isNaN(row.task.end.getTime()) ? dateFmt(row.task.end) : " ")
+            .text(row.task.end && !isNaN(row.task.end.getTime()) ? self.dateFormatter(row.task.end) : " ")
             .attr("x", colX(self.taskColCount + 1))
             .attr("y", top + yScale.bandwidth() / 2 + 4)
             .attr("font-size", taskFmt.fontSize.value)
@@ -1305,7 +1344,7 @@ if (headFmt.show.value) {
           // === Secondary ===
           if (showSecondaryColumns) {
             g.append("text")
-              .text(row.task.secondaryStart && !isNaN(row.task.secondaryStart.getTime()) ? dateFmt(row.task.secondaryStart) : " ")
+              .text(row.task.secondaryStart && !isNaN(row.task.secondaryStart.getTime()) ? self.dateFormatter(row.task.secondaryStart) : " ")
               .attr("x", colX(self.taskColCount + 2))
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-size", taskFmt.fontSize.value)
@@ -1314,7 +1353,7 @@ if (headFmt.show.value) {
               .attr("font-family", taskFmt.fontFamily.value);
 
             g.append("text")
-              .text(row.task.secondaryEnd && !isNaN(row.task.secondaryEnd.getTime()) ? dateFmt(row.task.secondaryEnd) : " ")
+              .text(row.task.secondaryEnd && !isNaN(row.task.secondaryEnd.getTime()) ? self.dateFormatter(row.task.secondaryEnd) : " ")
               .attr("x", colX(self.taskColCount + 3))
               .attr("y", top + yScale.bandwidth() / 2 + 4)
               .attr("font-size", taskFmt.fontSize.value)
@@ -1323,7 +1362,7 @@ if (headFmt.show.value) {
               .attr("font-family", taskFmt.fontFamily.value);
           }
 
-          // === ExtraCols justo acá (se pintan en el mismo flujo) ===
+          // === ExtraCols ===
           if (row.task.extraCols && self.extraColNames.length) {
             row.task.extraCols.forEach((val, i) => {
               const baseIndex = self.taskColCount + 2 + (showSecondaryColumns ? 2 : 0);
@@ -1338,7 +1377,7 @@ if (headFmt.show.value) {
                 } else {
                   const d = new Date(displayVal);
                   if (!isNaN(d.getTime())) {
-                    displayVal = d3.timeFormat("%d/%m/%Y %H:%M")(d);
+                    displayVal = self.dateFormatter(d);
                   }
                 }
               }
@@ -1366,18 +1405,9 @@ if (headFmt.show.value) {
               .attr("font-family", taskFmt.fontFamily.value);
           }
         }
-
-
-
       });
 
     if (this.fmtSettings.axisYCard.showLine.value) {
-      this.leftG.selectAll(".row")
-        .data(visibleRows)
-        .enter().append("g")
-        .attr("class", "row")
-        .each(function (row) {
-        });
 
       yAxisContentG.append("line")
         .attr("x1", margin.left - 1)
@@ -1573,7 +1603,7 @@ if (headFmt.show.value) {
         .attr("y", d => yScale(d.rowKey)! + yOff)
         .attr("width", d => x(d.end) - x(d.start))
         .attr("height", this.barH)
-        .attr("fill", d => this.getBarColor(d.rowKey, d.legend))
+        .attr("fill", d => `url(#${d.gradientId})`)
         .attr("rx", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
         .attr("ry", (barCfg.barGroup.slices.find(s => s.name === "cornerRadius") as formattingSettings.Slider).value)
         .attr("stroke", d => this.getBarColor(d.rowKey, d.legend))
@@ -1590,22 +1620,22 @@ if (headFmt.show.value) {
         })
         .on("mouseover", (event, d: BarDatum) => {
           const strokeColor = d3.select(event.currentTarget).attr("stroke");
-          d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
-          d3.selectAll(`.duration-label[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
+          requestAnimationFrame(() => {
+            d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
+            d3.selectAll(`.duration-label[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
+          });
         })
         .on("mouseout", (event, d: BarDatum) => {
-          d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", taskFmt.fontColor.value.value);
-          d3.selectAll(`.duration-label[data-rowKey="${d.rowKey}"]`).attr("fill", this.fmtSettings.barCard.labelGroup.fontColor.value.value);
+          requestAnimationFrame(() => {
+            d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", taskFmt.fontColor.value.value);
+            d3.selectAll(`.duration-label[data-rowKey="${d.rowKey}"]`).attr("fill", this.fmtSettings.barCard.labelGroup.fontColor.value.value);
+          });
         })
         .on("click", (event, d: BarDatum) => {
           event.stopPropagation();
           this.selectionManager.select(d.selectionId, event.ctrlKey || event.metaKey).then((ids: ISelectionId[]) => {
             this.selectedIds = ids;
-
-            const bars = this.ganttG.selectAll<SVGElement, BarDatum>(".bar, .completion-bar");
-            bars.attr("opacity", bar =>
-              ids.some(sel => sel.getKey() === bar.selectionId.getKey()) ? 1 : 0.3
-            );
+            this.updateBarOpacities();
           });
         })
         .on("contextmenu", (event, d: BarDatum) => {
@@ -1640,13 +1670,9 @@ if (headFmt.show.value) {
         })
         .on("click", (event, d: BarDatum) => {
           event.stopPropagation();
-          this.selectionManager.select(d.selectionId, true).then((ids: ISelectionId[]) => {
+          this.selectionManager.select(d.selectionId, event.ctrlKey || event.metaKey).then((ids: ISelectionId[]) => {
             this.selectedIds = ids;
-
-            const bars = this.ganttG.selectAll<SVGElement, BarDatum>(".bar, .completion-bar");
-            bars.attr("opacity", bar =>
-              ids.some(sel => sel.getKey() === bar.selectionId.getKey()) ? 1 : 0.3
-            );
+            this.updateBarOpacities();
           });
         })
         .on("contextmenu", (event, d: BarDatum) => {
@@ -1658,10 +1684,14 @@ if (headFmt.show.value) {
         })
         .on("mouseover", (event, d: BarDatum) => {
           const strokeColor = d3.select(event.currentTarget).attr("stroke");
-          d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
+          requestAnimationFrame(() => {
+            d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", strokeColor);
+          });
         })
         .on("mouseout", (event, d: BarDatum) => {
-          d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", parFmt.fontColor.value.value);
+          requestAnimationFrame(() => {
+            d3.selectAll(`text[data-rowKey="${d.rowKey}"]`).attr("fill", parFmt.fontColor.value.value);
+          });
         });
 
       const highlightColumn = dv.categorical.values.find(val => val.highlights);
@@ -1671,12 +1701,8 @@ if (headFmt.show.value) {
         bars.attr("opacity", d =>
           highlights[d.index] != null ? 1 : 0.3
         );
-      } else if (this.selectedIds.length > 0) {
-        bars.attr("opacity", d =>
-          this.selectedIds.some(sel => sel.getKey() === d.selectionId.getKey()) ? 1 : 0.3
-        );
       } else {
-        bars.attr("opacity", 1);
+        this.updateBarOpacities();
       }
 
       // === COMPLETION BARS ===
@@ -1714,28 +1740,70 @@ if (headFmt.show.value) {
       // === BARRAS SECUNDARIAS ===
       this.ganttG
         .selectAll(".bar-secondary")
-        .data(allBars.filter(d =>
-          d.secondaryStart instanceof Date &&
-          !isNaN(d.secondaryStart.getTime()) &&
-          d.secondaryEnd instanceof Date &&
-          !isNaN(d.secondaryEnd.getTime())
-        ))
+        .data(
+          allBars.filter(d =>
+            d.secondaryStart instanceof Date &&
+            !isNaN(d.secondaryStart.getTime()) &&
+            d.secondaryEnd instanceof Date &&
+            !isNaN(d.secondaryEnd.getTime())
+          )
+        )
         .join("rect")
         .attr("class", "bar-secondary")
         .attr("x", d => x(d.secondaryStart!))
-        .attr("y", d => yScale(d.rowKey)! + yOff + this.barH / 2 - (d.isGroup ? 4 : 3))
+        .attr("y", d =>
+          yScale(d.rowKey)! +
+          yOff +
+          this.barH * 0.5 - (d.isGroup ? 3 : 4) + 1
+        )
         .attr("width", d => {
           const xStart = x(d.secondaryStart!);
           const xEnd = x(d.secondaryEnd!);
-          const w = Math.max(0, xEnd - xStart);
-          return w;
+          return Math.max(0, xEnd - xStart);
         })
-        .attr("height", d => d.isGroup ? 5 : 6)
-        .attr("fill", d => d.isGroup ? "#d35400" : "#e67e22")
+        .attr("height", d => d.isGroup ? 4 : 5)
+        .attr("fill", d => {
+          const baseColor = this.getBarColor(d.rowKey, d.legend);
+          const color = d3.color(baseColor);
+          if (color) {
+            return color.darker(5).toString();
+          }
+          return "#1a252f";
+        })
+        .attr("stroke", "rgba(255,255,255,0.6)")
+        .attr("stroke-width", 1)
         .attr("rx", 2)
-        .on("mouseover", (event, d: BarDatum) => {
-          const key = d.rowKey.startsWith("G:") ? d.rowKey.slice(2) : d.rowKey;
-        });
+        .attr("ry", 2)
+        .style("pointer-events", "all");
+      // Líneas verticales al final
+      this.ganttG
+        .selectAll(".bar-secondary-end-marker")
+        .data(
+          this.selectedFormat !== "Mes"
+            ? allBars.filter(d =>
+              d.secondaryStart instanceof Date &&
+              !isNaN(d.secondaryStart.getTime()) &&
+              d.secondaryEnd instanceof Date &&
+              !isNaN(d.secondaryEnd.getTime())
+            )
+            : []
+        )
+        .join("line")
+        .attr("class", "bar-secondary-end-marker")
+        .attr("x1", d => x(d.secondaryEnd!))
+        .attr("x2", d => x(d.secondaryEnd!))
+        .attr("y1", d => yScale(d.rowKey)! + yOff + this.barH * 0.5 - 8)
+        .attr("y2", d => yScale(d.rowKey)! + yOff + this.barH * 0.5 + 8)
+        .attr("stroke", d => {
+          const baseColor = this.getBarColor(d.rowKey, d.legend);
+          const color = d3.color(baseColor);
+          if (color) {
+            return color.darker(2).toString();
+          }
+          return "#1a252f";
+        })
+        .attr("stroke-width", 3);
+
 
 
       // === LÍNEA Y TEXTO DE HOY ===
@@ -1850,14 +1918,14 @@ if (headFmt.show.value) {
 
             tooltipItems.push(
               { displayName: this.parentName, value: d.id },
-              { displayName: this.startName, value: range?.start ? d3.timeFormat("%d/%m/%Y %H:%M")(range.start) : "" },
-              { displayName: this.endName, value: range?.end ? d3.timeFormat("%d/%m/%Y %H:%M")(range.end) : "" }
+              { displayName: this.startName, value: range?.start ? self.dateFormatter(range.start) : "" },
+              { displayName: this.endName, value: range?.end ? self.dateFormatter(range.end) : "" }
             );
 
             if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
               tooltipItems.push(
-                { displayName: this.secondaryStartName, value: range?.secondaryStart ? d3.timeFormat("%d/%m/%Y %H:%M")(range.secondaryStart) : "" },
-                { displayName: this.secondaryEndName, value: range?.secondaryEnd ? d3.timeFormat("%d/%m/%Y %H:%M")(range.secondaryEnd) : "" }
+                { displayName: this.secondaryStartName, value: range?.secondaryStart ? self.dateFormatter(range.secondaryStart) : "" },
+                { displayName: this.secondaryEndName, value: range?.secondaryEnd ? self.dateFormatter(range.secondaryEnd) : "" }
               );
             }
           } else {
@@ -1868,14 +1936,14 @@ if (headFmt.show.value) {
             tooltipItems.push(
               { displayName: this.parentName, value: parentName },
               { displayName: "Task", value: taskName },
-              { displayName: this.startName, value: d.start ? d3.timeFormat("%d/%m/%Y %H:%M")(d.start) : "" },
-              { displayName: this.endName, value: d.end ? d3.timeFormat("%d/%m/%Y %H:%M")(d.end) : "" }
+              { displayName: this.startName, value: d.start ? self.dateFormatter(d.start) : "" },
+              { displayName: this.endName, value: d.end ? self.dateFormatter(d.end) : "" }
             );
 
             if (this.fmtSettings.taskCard.showSecondaryColumns.value) {
               tooltipItems.push(
-                { displayName: this.secondaryStartName, value: d.secondaryStart ? d3.timeFormat("%d/%m/%Y %H:%M")(d.secondaryStart) : "" },
-                { displayName: this.secondaryEndName, value: d.secondaryEnd ? d3.timeFormat("%d/%m/%Y %H:%M")(d.secondaryEnd) : "" }
+                { displayName: this.secondaryStartName, value: d.secondaryStart ? self.dateFormatter(d.secondaryStart) : "" },
+                { displayName: this.secondaryEndName, value: d.secondaryEnd ? self.dateFormatter(d.secondaryEnd) : "" }
               );
             }
           }
@@ -1964,6 +2032,43 @@ if (headFmt.show.value) {
       if (savedZoom) {
         this.ganttSVG.call(this.zoomBehavior.transform, savedZoom);
       }
+    }
+
+    if (this.currentZoomTransform) {
+      const actualFormat = this.updateSelectedFormatFromZoom(this.currentZoomTransform, width);
+      if (actualFormat !== this.selectedFormat) {
+        this.selectedFormat = actualFormat;
+        this.updateFormatButtonsUI(this.selectedFormat);
+        this.host.persistProperties({
+          merge: [{
+            objectName: "formatState",
+            selector: null,
+            properties: { selectedFormat: this.selectedFormat }
+          }]
+        });
+      }
+
+      const newX = this.currentZoomTransform.rescaleX(this.xOriginal);
+
+      renderXAxisTop({
+        xScale: newX,
+        svg: this.axisTopContentG,
+        height: 30,
+        width: width,
+        selectedFormat: this.selectedFormat,
+        translateX: margin.left,
+        fmtSettings: this.fmtSettings
+      });
+
+      renderXAxisBottom({
+        xScale: newX,
+        svg: this.axisBottomContentG,
+        height: 30,
+        width: width,
+        selectedFormat: this.selectedFormat,
+        translateX: margin.left,
+        fmtSettings: this.fmtSettings
+      });
     }
 
     this.host.eventService?.renderingFinished?.(opts.viewport);
@@ -2100,7 +2205,6 @@ if (headFmt.show.value) {
   private buildRows(tasks: Task[], cache: Map<string, boolean>) {
     const rows: VisualRow[] = [];
     this.groupRange.clear();
-    const uniqueParentsInTasks = new Set(tasks.map(t => t.parent));
 
     const tasksByIdParent = new Map<string, Task[]>();
     tasks.forEach(t => {
@@ -2170,6 +2274,10 @@ if (headFmt.show.value) {
     barH: number
   ) {
     const days = d3.timeDays(newX.domain()[0], newX.domain()[1]);
+
+    this.ganttG.selectAll("line.day").remove();
+    this.ganttG.selectAll("rect.weekend").remove();
+    this.ganttG.selectAll("line.month").remove();
 
     if (this.selectedFormat === "Día" && this.fmtSettings.weekendCard.show.value) {
       this.ganttG.selectAll<SVGLineElement, Date>("line.day")
@@ -2292,6 +2400,13 @@ if (headFmt.show.value) {
         return (newX(d) + nextX) / 2;
       });
 
+    this.ganttG
+      .selectAll<SVGLineElement, BarDatum>(".bar-secondary-end-marker")
+      .style("display", this.selectedFormat === "Mes" ? "none" : null)
+      .attr("x1", d => newX(d.secondaryEnd!))
+      .attr("x2", d => newX(d.secondaryEnd!));
+
+
     this.axisTopContentG?.selectAll<SVGLineElement, Date>("line")
       .attr("x1", d => newX(d))
       .attr("x2", d => newX(d));
@@ -2360,6 +2475,14 @@ if (headFmt.show.value) {
         const x1 = newX(d.secondaryStart!);
         const x2 = newX(d.secondaryEnd!);
         return Math.max(0, x2 - x1);
+      })
+      .attr("fill", d => {
+        const baseColor = this.getBarColor(d.rowKey, d.legend);
+        const color = d3.color(baseColor);
+        if (color) {
+          return color.darker(0.3).toString(); // 0.3 ≈ 15% más oscuro
+        }
+        return d.isGroup ? "#d35400" : "#e67e22"; // fallback
       });
 
     const today = new Date();
@@ -2373,6 +2496,8 @@ if (headFmt.show.value) {
       .attr("x", d => newX(d) + 10);
 
   }
+
+
 
   private updateSelectedFormatFromZoom(t: d3.ZoomTransform, width: number): FormatType {
     const [start, end] = this.xOriginal.domain();
@@ -2404,9 +2529,7 @@ if (headFmt.show.value) {
     const visibleW = this.width - this.marginLeft;
     const rangeWidth = this.xOriginal(end) - this.xOriginal(start);
     const scale = visibleW / rangeWidth;
-
     let barStart: number;
-
     if (this.currentZoomTransform) {
       const oldX = this.currentZoomTransform.rescaleX(this.xOriginal);
       const [oldMin] = oldX.domain();
@@ -2425,16 +2548,13 @@ if (headFmt.show.value) {
       if (!firstTask) return;
       barStart = this.xOriginal(firstTask.start!);
     }
-
     const translateX = (this.marginLeft - this.marginLeft) - barStart * scale + 10;
-
     const t = d3.zoomIdentity
       .translate(translateX, 0)
       .scale(scale);
 
     this.ganttSVG.call(this.zoomBehavior.transform, t);
   }
-
   private updateFormatButtonsUI(fmt: FormatType) {
     const buttons = this.rightBtns.selectAll("button");
     buttons.classed("active", d => d === fmt);
