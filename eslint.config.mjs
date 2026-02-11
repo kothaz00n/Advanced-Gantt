@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
 export default [
     powerbiVisualsConfigs.configs.recommended,
     {
-        ignores: ["node_modules/**", "dist/**", ".vscode/**", ".tmp/**"],
+        ignores: ["node_modules/**", "dist/**", ".vscode/**", ".tmp/**", "*.js", "tests/__mocks__/**"],
     },
     {
         files: ["**/*.ts", "**/*.tsx"],
@@ -20,7 +20,7 @@ export default [
                 ecmaVersion: 2020,
                 sourceType: "module",
                 tsconfigRootDir: __dirname,  // ✅ Ruta absoluta
-                project: ["./tsconfig.json"]
+                project: ["./tsconfig.eslint.json"]
             }
         },
         plugins: {

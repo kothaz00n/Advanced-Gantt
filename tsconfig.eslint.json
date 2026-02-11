@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/**/*",
+    "tests/**/*",
+    "*.js",
+    "tests/__mocks__/*.js"
+  ],
+  "compilerOptions": {
+    "allowJs": true
+  }
+}
