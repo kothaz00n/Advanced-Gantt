@@ -1,4 +1,4 @@
-import { BarDatum } from "../visual";
+import { BarDatum } from "../types";
 
 export function getCompletionByGroup(rowKey: string, allBars: BarDatum[]): number {
     const groupId = rowKey.replace(/^G:/, "");
