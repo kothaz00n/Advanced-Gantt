@@ -1482,10 +1482,22 @@ export class Visual implements IVisual {
 
     const dependencies: { from: string; to: string }[] = [];
 
+    const rowsMap = new Map<string, VisualRow>();
+    const rowsByLabel = new Map<string, VisualRow>();
+
+    visibleRows.forEach(r => {
+      if (!rowsMap.has(r.id)) {
+        rowsMap.set(r.id, r);
+      }
+      if (!rowsByLabel.has(r.labelY)) {
+        rowsByLabel.set(r.labelY, r);
+      }
+    });
+
     visibleRows.forEach(row => {
       const pred = row.task?.predecessor;
       if (pred) {
-        const fromTask = visibleRows.find(r => r.labelY === pred);
+        const fromTask = rowsByLabel.get(pred);
 
         if (
           fromTask?.task?.start instanceof Date &&
@@ -1930,8 +1942,8 @@ export class Visual implements IVisual {
     }[] = [];
 
     dependencies.forEach(dep => {
-      const fromRow = visibleRows.find(r => r.id === dep.from);
-      const toRow = visibleRows.find(r => r.id === dep.to);
+      const fromRow = rowsMap.get(dep.from);
+      const toRow = rowsMap.get(dep.to);
 
       if (fromRow?.task?.end && toRow?.task?.start) {
         depLines.push({ fromRow, toRow });
