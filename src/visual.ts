@@ -727,8 +727,10 @@ export class Visual implements IVisual {
     this.rightBtns.style("display", hasData ? "block" : "none");
     const pad = 10;
 
-    const tasks = this.parseData(dv);
-    if (tasks.length) this.cacheTasks = tasks;
+    if (isDataUpdate || !this.cacheTasks || this.cacheTasks.length === 0) {
+      const tasks = this.parseData(dv);
+      if (tasks.length) this.cacheTasks = tasks;
+    }
 
     const hasD = this.cacheTasks.some(t => t.fields.length > this.taskColCount);
     const extraColCount = this.cacheTasks[0]?.extraCols?.length ?? 0;
