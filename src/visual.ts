@@ -1068,6 +1068,14 @@ export class Visual implements IVisual {
 
     const self = this;
 
+    const tasksByParent = new Map<string, Task[]>();
+    this.cacheTasks.forEach(t => {
+      if (!tasksByParent.has(t.parent)) {
+        tasksByParent.set(t.parent, []);
+      }
+      tasksByParent.get(t.parent)!.push(t);
+    });
+
     const yScale = this.y
 
     const yAxis = yAxisContentG.selectAll(".row")
@@ -1178,7 +1186,7 @@ export class Visual implements IVisual {
 
           if (self.extraColNames.length > 0) {
             self.extraColNames.forEach((colName, i) => {
-              const children = self.cacheTasks.filter(t => t.parent === row.id);
+              const children = tasksByParent.get(row.id) || [];
               const vals = children.map(t => t.extraCols?.[i]).filter(v => v !== undefined && v !== "");
 
               let aggVal = "";
