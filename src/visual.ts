@@ -17,6 +17,7 @@ import { renderXAxisTop } from "./components/xAxis/renderXAxisTop";
 import { renderLanding } from "./components/renderLanding";
 import { getGroupBarPath } from "./utils/barPaths";
 import { getCompletionByGroup } from "./utils/completionCalculator";
+import { BarDatum } from "./types";
 import IVisual = powerbi.extensibility.IVisual;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
@@ -54,21 +55,6 @@ interface VisualRow {
   labelY: string;
   duration?: number;
   extraCols?: string[];
-}
-
-export interface BarDatum {
-  id: string;
-  start: Date;
-  end: Date;
-  rowKey: string;
-  isGroup: boolean;
-  index: number;
-  completion?: number;
-  secondaryStart?: Date;
-  secondaryEnd?: Date;
-  selectionId: ISelectionId;
-  legend?: string;
-  gradientId?: string;
 }
 
 export interface GanttDataPoint {
