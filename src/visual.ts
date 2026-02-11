@@ -16,7 +16,6 @@ import { renderXAxisBottom } from "./components/xAxis/renderXAxisBottom";
 import { renderXAxisTop } from "./components/xAxis/renderXAxisTop";
 import { renderLanding } from "./components/renderLanding";
 import { getGroupBarPath } from "./utils/barPaths";
-import { getCompletionByGroup } from "./utils/completionCalculator";
 import IVisual = powerbi.extensibility.IVisual;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
@@ -1451,6 +1450,31 @@ export class Visual implements IVisual {
     const parentCategory = categorical.categories[1];
     const legendCategory = categorical.categories.find(c => c.source.roles?.legend);
 
+    // Pre-calculate group completions
+    const groupCompletionMap = new Map<string, number>();
+    const groupSums = new Map<string, { sum: number; count: number }>();
+
+    this.cacheTasks.forEach(task => {
+      if (task.parent) {
+        const key = task.parent;
+        if (!groupSums.has(key)) {
+          groupSums.set(key, { sum: 0, count: 0 });
+        }
+        const entry = groupSums.get(key)!;
+        const c = Number(task.completion);
+        if (!isNaN(c)) {
+          entry.sum += c;
+          entry.count++;
+        }
+      }
+    });
+
+    groupSums.forEach((val, key) => {
+      const avg = val.sum / val.count;
+      const boundedAvg = Math.max(0, Math.min(1, avg > 1 ? avg / 100 : avg));
+      groupCompletionMap.set(key, boundedAvg);
+    });
+
     const groupBars: BarDatum[] = visibleRows
       .filter(r => r.isGroup)
       .map(r => {
@@ -1468,21 +1492,7 @@ export class Visual implements IVisual {
           rowKey: r.rowKey,
           isGroup: true,
           index: parentIndex,
-          completion: getCompletionByGroup(
-            r.rowKey,
-            this.cacheTasks.map((t, j) => ({
-              id: t.id,
-              start: t.start,
-              end: t.end,
-              rowKey: `T:${t.id}|${t.parent}`,
-              isGroup: false,
-              index: j,
-              completion: t.completion,
-              selectionId: this.host.createSelectionIdBuilder()
-                .withCategory(taskCategory, j)
-                .createSelectionId() as ISelectionId
-            }))
-          ),
+          completion: groupCompletionMap.get(r.id) ?? 0,
           secondaryStart: range.secondaryStart ? new Date(range.secondaryStart) : undefined,
           secondaryEnd: range.secondaryEnd ? new Date(range.secondaryEnd) : undefined,
           selectionId: groupSelectionId
