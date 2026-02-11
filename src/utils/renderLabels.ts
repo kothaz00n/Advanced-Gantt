@@ -33,8 +33,6 @@ export function renderDurationLabels(opts: LabelOptions) {
     underline = false
   } = opts;
 
-  svg.selectAll(".duration-label").remove();
-
   const formatDuration = (start: Date, end: Date, label: string) => {
     const ms = end.getTime() - start.getTime();
     const minutes = Math.floor(ms / 60_000);  
@@ -61,7 +59,7 @@ export function renderDurationLabels(opts: LabelOptions) {
       !isNaN(d.start.getTime()) &&
       d.end instanceof Date &&
       !isNaN(d.end.getTime())
-    ))
+    ), (d: any) => d.id)
     .join("text")
     .attr("class", "duration-label")
     .text(d => formatDuration(d.start, d.end, d.id))
