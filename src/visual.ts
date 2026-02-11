@@ -335,6 +335,7 @@ export class Visual implements IVisual {
           }
         });
       } catch (e) {
+        console.error("Error parsing colorMapString:", e);
       }
     }
 
