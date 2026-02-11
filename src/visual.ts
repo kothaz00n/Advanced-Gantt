@@ -29,67 +29,7 @@ import ISandboxExtendedColorPalette = powerbi.extensibility.ISandboxExtendedColo
 import Fill = powerbi.Fill;
 import FormattingId = powerbi.visuals.FormattingId;
 import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
-
-interface Task {
-  id: string;
-  parent: string;
-  start: Date | null;
-  end: Date | null;
-  fields: string[];
-  completion?: number;
-  secondaryStart?: Date;
-  secondaryEnd?: Date;
-  predecessor?: string;
-  index: number;
-  extraCols?: string[];
-  legend?: string;
-}
-
-interface VisualRow {
-  id: string;
-  isGroup: boolean;
-  task?: Task;
-  rowKey: string;
-  labelY: string;
-  duration?: number;
-  extraCols?: string[];
-}
-
-export interface BarDatum {
-  id: string;
-  start: Date;
-  end: Date;
-  rowKey: string;
-  isGroup: boolean;
-  index: number;
-  completion?: number;
-  secondaryStart?: Date;
-  secondaryEnd?: Date;
-  selectionId: ISelectionId;
-  legend?: string;
-  gradientId?: string;
-}
-
-export interface GanttDataPoint {
-  task: string;
-  parent: string;
-  startDate: Date;
-  endDate: Date;
-  color: string;
-  selectionId: ISelectionId;
-  index: number;
-  completion?: number;
-  secondaryStart?: Date;
-  secondaryEnd?: Date;
-}
-
-interface LegendDataPoint {
-  legend: string;
-  color: string;
-  selectionId: ISelectionId;
-  index: number;
-  formattingId: FormattingId;
-}
+import { Task, VisualRow, BarDatum, GanttDataPoint, LegendDataPoint, FormatType } from "./types";
 
 function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHost): GanttDataPoint[] {
   const dataPoints: GanttDataPoint[] = [];
@@ -160,8 +100,6 @@ function getColumnColorByIndex(
 
   return colorFromObjects?.solid.color ?? defaultColor.solid.color;
 }
-
-type FormatType = 'Hora' | 'Día' | 'Mes' | 'Año' | 'Todo';
 
 export class Visual implements IVisual {
   private container: HTMLElement;
@@ -334,6 +272,7 @@ export class Visual implements IVisual {
           }
         });
       } catch (e) {
+        console.error("Error parsing colorMapString:", e);
       }
     }
 
@@ -726,8 +665,10 @@ export class Visual implements IVisual {
     this.rightBtns.style("display", hasData ? "block" : "none");
     const pad = 10;
 
-    const tasks = this.parseData(dv);
-    if (tasks.length) this.cacheTasks = tasks;
+    if (isDataUpdate || !this.cacheTasks || this.cacheTasks.length === 0) {
+      const tasks = this.parseData(dv);
+      if (tasks.length) this.cacheTasks = tasks;
+    }
 
     const hasD = this.cacheTasks.some(t => t.fields.length > this.taskColCount);
     const extraColCount = this.cacheTasks[0]?.extraCols?.length ?? 0;
@@ -1126,6 +1067,14 @@ export class Visual implements IVisual {
 
     const self = this;
 
+    const tasksByParent = new Map<string, Task[]>();
+    this.cacheTasks.forEach(t => {
+      if (!tasksByParent.has(t.parent)) {
+        tasksByParent.set(t.parent, []);
+      }
+      tasksByParent.get(t.parent)!.push(t);
+    });
+
     const yScale = this.y
 
     const yAxis = yAxisContentG.selectAll(".row")
@@ -1236,7 +1185,7 @@ export class Visual implements IVisual {
 
           if (self.extraColNames.length > 0) {
             self.extraColNames.forEach((colName, i) => {
-              const children = self.cacheTasks.filter(t => t.parent === row.id);
+              const children = tasksByParent.get(row.id) || [];
               const vals = children.map(t => t.extraCols?.[i]).filter(v => v !== undefined && v !== "");
 
               let aggVal = "";
@@ -1543,10 +1492,22 @@ export class Visual implements IVisual {
 
     const dependencies: { from: string; to: string }[] = [];
 
+    const rowsMap = new Map<string, VisualRow>();
+    const rowsByLabel = new Map<string, VisualRow>();
+
+    visibleRows.forEach(r => {
+      if (!rowsMap.has(r.id)) {
+        rowsMap.set(r.id, r);
+      }
+      if (!rowsByLabel.has(r.labelY)) {
+        rowsByLabel.set(r.labelY, r);
+      }
+    });
+
     visibleRows.forEach(row => {
       const pred = row.task?.predecessor;
       if (pred) {
-        const fromTask = visibleRows.find(r => r.labelY === pred);
+        const fromTask = rowsByLabel.get(pred);
 
         if (
           fromTask?.task?.start instanceof Date &&
@@ -1991,8 +1952,8 @@ export class Visual implements IVisual {
     }[] = [];
 
     dependencies.forEach(dep => {
-      const fromRow = visibleRows.find(r => r.id === dep.from);
-      const toRow = visibleRows.find(r => r.id === dep.to);
+      const fromRow = rowsMap.get(dep.from);
+      const toRow = rowsMap.get(dep.to);
 
       if (fromRow?.task?.end && toRow?.task?.start) {
         depLines.push({ fromRow, toRow });
