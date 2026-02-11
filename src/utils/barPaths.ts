@@ -1,5 +1,5 @@
 import * as d3 from "d3";
-import { BarDatum } from "../visual";
+import { BarDatum } from "../types";
 
 export function getGroupBarPath(
     scaleX: d3.ScaleTime<number, number>,
