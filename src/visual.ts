@@ -17,6 +17,7 @@ import { renderXAxisTop } from "./components/xAxis/renderXAxisTop";
 import { renderLanding } from "./components/renderLanding";
 import { getGroupBarPath } from "./utils/barPaths";
 import { getCompletionByGroup } from "./utils/completionCalculator";
+import { Task, VisualRow, BarDatum, GanttDataPoint, LegendDataPoint, FormatType } from "./types";
 import IVisual = powerbi.extensibility.IVisual;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
@@ -31,66 +32,6 @@ import Fill = powerbi.Fill;
 import FormattingId = powerbi.visuals.FormattingId;
 import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 
-interface Task {
-  id: string;
-  parent: string;
-  start: Date | null;
-  end: Date | null;
-  fields: string[];
-  completion?: number;
-  secondaryStart?: Date;
-  secondaryEnd?: Date;
-  predecessor?: string;
-  index: number;
-  extraCols?: string[];
-  legend?: string;
-}
-
-interface VisualRow {
-  id: string;
-  isGroup: boolean;
-  task?: Task;
-  rowKey: string;
-  labelY: string;
-  duration?: number;
-  extraCols?: string[];
-}
-
-export interface BarDatum {
-  id: string;
-  start: Date;
-  end: Date;
-  rowKey: string;
-  isGroup: boolean;
-  index: number;
-  completion?: number;
-  secondaryStart?: Date;
-  secondaryEnd?: Date;
-  selectionId: ISelectionId;
-  legend?: string;
-  gradientId?: string;
-}
-
-export interface GanttDataPoint {
-  task: string;
-  parent: string;
-  startDate: Date;
-  endDate: Date;
-  color: string;
-  selectionId: ISelectionId;
-  index: number;
-  completion?: number;
-  secondaryStart?: Date;
-  secondaryEnd?: Date;
-}
-
-interface LegendDataPoint {
-  legend: string;
-  color: string;
-  selectionId: ISelectionId;
-  index: number;
-  formattingId: FormattingId;
-}
 
 function createSelectorDataPoints(options: VisualUpdateOptions, host: IVisualHost): GanttDataPoint[] {
   const dataPoints: GanttDataPoint[] = [];
@@ -161,8 +102,6 @@ function getColumnColorByIndex(
 
   return colorFromObjects?.solid.color ?? defaultColor.solid.color;
 }
-
-type FormatType = 'Hora' | 'Día' | 'Mes' | 'Año' | 'Todo';
 
 export class Visual implements IVisual {
   private container: HTMLElement;
